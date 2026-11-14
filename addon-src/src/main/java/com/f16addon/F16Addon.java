@@ -38,7 +38,7 @@ import org.slf4j.Logger;
 @Mod(F16Addon.MODID)
 public final class F16Addon {
    public static final String MODID = "f16addon";
-   static final Logger LOGGER = LogUtils.getLogger();
+   public static final Logger LOGGER = LogUtils.getLogger();
    private static final double COMMAND_RANGE = 512.0;
    private static final int ENERGY_REFILL_INTERVAL = 20;
 
