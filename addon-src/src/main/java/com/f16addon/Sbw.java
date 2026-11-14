@@ -210,6 +210,40 @@ public final class Sbw {
       return vehicleType(entity).equals("AIRPLANE");
    }
 
+   /**
+    * Logs every SBW method the AI relies on that cannot be resolved. All calls go through reflection and fail
+    * silently by design, so after an SBW / DragonRise update the AI would otherwise just stop doing things.
+    */
+   static void selfCheck(org.slf4j.Logger log) {
+      check(log, VEHICLE_CLASS_NAME, IS_WRECK, GET_HEALTH, GET_ROLL, SET_ROLL, SET_PREV_ROLL, SET_GEAR_UP, GET_GUN_DATA_MAP,
+         SET_GUN_DATA_MAP, GET_MAX_ENERGY, GET_ENERGY, SET_ENERGY, TURRET_AIM, ADJUST_TURRET, GET_SHOOT_POS, SET_AI_TURRET_TARGET,
+         SET_AI_PASSENGER_TARGET, GET_DECOY_COUNT, RELEASE_DECOY, GET_VEHICLE_TYPE);
+      check(log, MISSILE_CLASS_NAME, GET_TARGET_UUID, SET_TARGET_UUID, SET_TARGET_POS, SET_GUIDE_TYPE, SET_DISTRACTED);
+   }
+
+   private static void check(org.slf4j.Logger log, String className, Sig... sigs) {
+      Class<?> type;
+      try {
+         type = Class.forName(className, false, Sbw.class.getClassLoader());
+      } catch (ClassNotFoundException | LinkageError e) {
+         log.error("[Enemy Forces] Superb Warfare class {} not found - AI will not work with this SBW version", className);
+         return;
+      }
+
+      StringBuilder missing = new StringBuilder();
+      for (Sig sig : sigs) {
+         if (method(type, sig) == null) {
+            missing.append(missing.length() == 0 ? "" : ", ").append(sig.name);
+         }
+      }
+
+      if (missing.length() > 0) {
+         log.warn("[Enemy Forces] {} is missing methods used by the AI: {}", type.getSimpleName(), missing);
+      } else {
+         log.info("[Enemy Forces] SBW API check passed for {}", type.getSimpleName());
+      }
+   }
+
    public static Vec3 shootPos(Entity entity, String weapon, Vec3 fallback) {
       return call(entity, GET_SHOOT_POS, weapon, 1.0F) instanceof Vec3 v ? v : fallback;
    }

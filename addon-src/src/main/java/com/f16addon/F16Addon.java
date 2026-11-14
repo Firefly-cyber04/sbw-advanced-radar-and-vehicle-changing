@@ -24,6 +24,7 @@ import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -54,6 +55,7 @@ public final class F16Addon {
       IEventBus bus = MinecraftForge.EVENT_BUS;
       bus.addListener(F16Addon::onServerTick);
       bus.addListener(F16Addon::onServerStopped);
+      bus.addListener(EventPriority.NORMAL, false, ServerStartedEvent.class, e -> Sbw.selfCheck(LOGGER));
       bus.addListener(PlayerFireControl::onEntityJoin);
       // LOWEST + not receiving cancelled: only entities that really join are tracked.
       bus.addListener(EventPriority.LOWEST, false, EntityJoinLevelEvent.class, UnitTracker::onJoin);
