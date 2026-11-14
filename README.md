@@ -1,18 +1,29 @@
-# Enemy Forces Addon 1.1.0
+# Enemy Forces Addon 1.2.0
 
 Minecraft **1.20.1 / Forge 47.4.x** 的敌方部队与空战扩展整合包。
 
 本仓库包含：
 
-- `enemyforces-1.1.0.jar`：Enemy Forces 附属本体（源码见 `addon-src/`）
+- `enemyforces-1.2.0.jar`：Enemy Forces 附属本体（源码见 `addon-src/`）
 - `superbwarfare-0.8.9.2-...jar`：修改过的 Superb Warfare
 - `dragonrise_reforge-1.5.1-release.jar`：修改过的 DragonRise Reforge
 - `docs/F16_ADDON.md`：完整功能与参数说明
 - `config/superbwarfare-server.toml`：当前使用的服务端配置参考
 - `config/f16addon-server.toml`：附属 AI 配置（1.1.0 新增）
 - `docs/PERF_AND_TARGETING_1.1.0.md`：1.1.0 卡顿与索敌修复说明、基准数据
+- `docs/AUTOPILOT_RADAR_1.2.0.md`：1.2.0 自动驾驶、战术终端、飞行视角修复说明
 
 > **重要**：Superb Warfare 与 DragonRise 是第三方模组，本仓库中的对应 jar 是**修改版**。原模组版权归原作者所有；使用前请备份原 jar。
+
+---
+
+## 1.2.0 更新摘要
+
+- **飞行视角失控**：修复打开/关闭任何界面（战术终端、聊天、背包、失焦）后飞机自己俯仰滚转 1–2 秒的问题——根因是 SBW 用鼠标绝对坐标差驱动摇杆，界面切换时坐标跳变并被平滑滤波器累积。
+- **单兵战术终端卡顿**：地图缓存不再每 250 ms 重绘 512 个未变化区块；只写变化像素；队列在后台按时间预算消化，打开终端不再卡死；磁盘缓存异步写入；虚线/图标批量绘制（draw call 从数百降到个位数）。
+- **战术终端 UI**：左侧态势面板（本机状态、导弹告警、兵力统计、可点击定位的敌方接触列表）、敌/友/中立符号框、速度矢量、高度标签、来袭导弹红圈、雷达扫描波束、距离环。
+- **敌方自动驾驶**：F-16 地形跟随、协调转弯、能量管理、导弹侧置规避、对地攻击航线、编队间隔、模拟区边缘提前转向、目标速度测量、滑跑式起飞；地面单位扇形探路避障、避水避崖、原地转向、卡住倒车。
+- 详见 [docs/AUTOPILOT_RADAR_1.2.0.md](docs/AUTOPILOT_RADAR_1.2.0.md)。
 
 ---
 
@@ -184,10 +195,11 @@ projectile_chunk_age = 10
 │  ├─ f16addon-server.toml
 │  └─ superbwarfare-server.toml
 ├─ docs/
+│  ├─ AUTOPILOT_RADAR_1.2.0.md
 │  ├─ F16_ADDON.md
 │  └─ PERF_AND_TARGETING_1.1.0.md
 └─ mods/
-   ├─ enemyforces-1.1.0.jar
+   ├─ enemyforces-1.2.0.jar
    ├─ superbwarfare-0.8.9.2-mc1.20.1-65d985a64-all.jar
    └─ dragonrise_reforge-1.5.1-release.jar
 ```
