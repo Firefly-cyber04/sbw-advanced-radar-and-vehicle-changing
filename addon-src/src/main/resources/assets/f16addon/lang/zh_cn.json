@@ -1,0 +1,15 @@
+{
+  "item.f16addon.enemy_f16_deployer": "敌方 F-16 召唤器",
+  "item.f16addon.enemy_f16_deployer.tooltip": "生成一架已装弹的敌方 F-16，武器由附属自己的 AI 控制。",
+  "item.f16addon.enemy_bmpt72_deployer": "敌方 BMPT-72 召唤器",
+  "item.f16addon.enemy_bmpt72_deployer.tooltip": "生成一辆已装弹的敌方 BMPT-72（30mm 机炮、机枪、反坦克导弹）。",
+  "item.f16addon.enemy_t80_deployer": "敌方 T-80 召唤器",
+  "item.f16addon.enemy_t80_deployer.tooltip": "生成一辆已装弹的敌方 T-80（125mm 主炮、机枪、重机枪）。",
+  "item.f16addon.enemy_wasp_deployer": "敌方黄蜂防空导弹召唤器",
+  "item.f16addon.enemy_wasp_deployer.tooltip": "生成固定不动的敌方 AKM 黄蜂防空系统；普通目标 1000 格索敌，五代机目标缩短为 400 格；优先拦截导弹，其次攻击视线内且离地至少 8 格的空中目标；被遮挡或高度过低的目标不会攻击。",
+  "item.f16addon.ground_command_tablet": "地面单位指挥终端",
+  "item.f16addon.ground_command_tablet.tooltip": "右键指挥 BMPT-72/T-80：推进、防守、跟随、停火；索敌范围 328 格。",
+  "item.f16addon.f16_targeting_pod": "F-16 导弹锁定器",
+  "item.f16addon.f16_targeting_pod.tooltip": "右键打开目标锁定界面。锁定后，附近敌方 F-16 会优先攻击该目标。",
+  "itemGroup.f16addon": "敌方部队"
+}

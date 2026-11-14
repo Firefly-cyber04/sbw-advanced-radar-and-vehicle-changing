@@ -1,0 +1,15 @@
+{
+  "item.f16addon.enemy_f16_deployer": "Enemy F-16 Deployer",
+  "item.f16addon.enemy_f16_deployer.tooltip": "Deploys an enemy F-16 with ammo. Its weapons are controlled by the addon's own AI.",
+  "item.f16addon.enemy_bmpt72_deployer": "Enemy BMPT-72 Deployer",
+  "item.f16addon.enemy_bmpt72_deployer.tooltip": "Deploys an enemy BMPT-72 with 30mm, machine-gun and ATGM ammo.",
+  "item.f16addon.enemy_t80_deployer": "Enemy T-80 Deployer",
+  "item.f16addon.enemy_t80_deployer.tooltip": "Deploys an enemy T-80 with 125mm, machine-gun and heavy ammo.",
+  "item.f16addon.enemy_wasp_deployer": "Enemy Wasp SAM Deployer",
+  "item.f16addon.enemy_wasp_deployer.tooltip": "Deploys a stationary AKM Wasp SAM. 1000-block range, but only 400 blocks against fifth-generation fighters; intercepts missiles first, then visible airborne targets at least 8 blocks above ground. Blocked and low targets are ignored.",
+  "item.f16addon.ground_command_tablet": "Ground Command Tablet",
+  "item.f16addon.ground_command_tablet.tooltip": "Right-click to command BMPT-72/T-80: advance, hold, follow or stop. Detection range 328 blocks.",
+  "item.f16addon.f16_targeting_pod": "F-16 Targeting Pod",
+  "item.f16addon.f16_targeting_pod.tooltip": "Right-click to open the target lock screen. Nearby enemy F-16s will prioritize the locked target.",
+  "itemGroup.f16addon": "Enemy Forces"
+}
