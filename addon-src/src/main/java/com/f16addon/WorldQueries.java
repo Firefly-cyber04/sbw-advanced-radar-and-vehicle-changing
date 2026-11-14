@@ -5,6 +5,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -18,13 +20,23 @@ import net.minecraft.world.phys.Vec3;
  * every tick: jets probed terrain 50 blocks ahead at 5 blocks/tick, ground units snapped to the heightmap of the next
  * step, and the SAM raycast up to 1000 blocks to every candidate. Any of those crossing into unloaded terrain caused a
  * multi-millisecond to multi-second server stall — the main "卡顿" source.
+ *
+ * <p>1.2.0: the guard itself must not be {@code hasChunk}. On the server that only means "a ticket keeps this chunk at
+ * FULL level" — the chunk can still be generating, and the following {@code getHeight / getBlockState} then parks the
+ * server thread until generation finishes (measured: up to 2.3 s per tick with jets probing terrain next to freshly
+ * force-loaded chunks). Every query here goes through {@code getChunkNow}, which returns only finished chunks.
  */
 public final class WorldQueries {
    private WorldQueries() {
    }
 
+   /** The finished chunk at the given chunk coordinates, or null; never loads, generates or waits. */
+   public static LevelChunk chunkNow(ServerLevel level, int chunkX, int chunkZ) {
+      return level.getChunkSource().getChunkNow(chunkX, chunkZ);
+   }
+
    public static boolean isLoaded(ServerLevel level, double x, double z) {
-      return level.getChunkSource().hasChunk(Mth.floor(x) >> 4, Mth.floor(z) >> 4);
+      return chunkNow(level, Mth.floor(x) >> 4, Mth.floor(z) >> 4) != null;
    }
 
    /** Entity-ticking means vanilla would tick an entity here; AI outside that area would act on frozen chunks. */
@@ -40,11 +52,15 @@ public final class WorldQueries {
    public static int height(ServerLevel level, Heightmap.Types type, double x, double z, int fallback) {
       int bx = Mth.floor(x);
       int bz = Mth.floor(z);
-      if (!level.getChunkSource().hasChunk(bx >> 4, bz >> 4)) {
-         return fallback;
-      }
+      LevelChunk chunk = chunkNow(level, bx >> 4, bz >> 4);
+      // Same value as Level.getHeight: heightmap top + 1.
+      return chunk == null ? fallback : chunk.getHeight(type, bx & 15, bz & 15) + 1;
+   }
 
-      return level.getHeight(type, bx, bz);
+   /** Fluid at a block, or null if its chunk is not loaded. */
+   public static FluidState fluid(ServerLevel level, BlockPos pos) {
+      LevelChunk chunk = chunkNow(level, pos.getX() >> 4, pos.getZ() >> 4);
+      return chunk == null ? null : chunk.getFluidState(pos);
    }
 
    public static double heightAboveGround(ServerLevel level, Entity entity) {
@@ -69,7 +85,7 @@ public final class WorldQueries {
       int steps = Math.abs(ex - cx) + Math.abs(ez - cz) + 1;
 
       for (int i = 0; i < steps; i++) {
-         if (!level.getChunkSource().hasChunk(cx, cz)) {
+         if (chunkNow(level, cx, cz) == null) {
             return false;
          }
 
