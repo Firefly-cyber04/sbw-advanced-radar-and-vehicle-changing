@@ -4,7 +4,11 @@
   "package": "com.f16addon.mixin",
   "compatibilityLevel": "JAVA_17",
   "mixins": [
-    "RadarScannerMixin"
+    "Agm65EntityMixin",
+    "Aim120EntityMixin",
+    "MissileProjectileMixin",
+    "RadarScannerMixin",
+    "Ru9m336MissileEntityMixin"
   ],
   "client": [
     "MapEntityRendererMixin",

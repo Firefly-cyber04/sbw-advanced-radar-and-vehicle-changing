@@ -18,6 +18,12 @@
 	#By default only players and vehicles are targets (animals / villagers / random mobs are ignored).
 	extraTargetTypes = []
 
+[missiles]
+	#SBW / DragonRise missiles (AIM-120, 9M336, AGM-65, Kh-39 ...) aim at a predicted intercept point computed from the
+	#target's motion. Player-driven vehicles and this addon's jets report zero motion on the server, so missiles fell back
+	#to pure pursuit. true = use the target's measured velocity (applies to every missile, players' included); false = SBW behaviour.
+	measuredTargetVelocity = true
+
 [f16]
 	#Range: 64.0 ~ 4096.0
 	scanRange = 1024.0

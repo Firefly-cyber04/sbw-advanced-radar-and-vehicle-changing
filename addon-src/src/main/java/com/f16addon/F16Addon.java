@@ -167,6 +167,8 @@ public final class F16Addon {
          if ((traits & (Classify.IR_AAM | Classify.RADAR_AAM)) != 0 && F16MissileDefense.isEnemyAam(entity)) {
             F16MissileDefense.tick(level, entity);
          }
+
+         MissileFlight.checkOvershoot(level, entity);
       }
 
       if (expired != null) {

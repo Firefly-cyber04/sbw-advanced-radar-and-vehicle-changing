@@ -22,6 +22,7 @@ public final class Config {
    public static final ForgeConfigSpec.IntValue MAX_LOS_CHECKS_PER_SCAN;
    public static final ForgeConfigSpec.BooleanValue TARGET_CREATIVE_PLAYERS;
    public static final ForgeConfigSpec.BooleanValue TARGET_EMPTY_VEHICLES;
+   public static final ForgeConfigSpec.BooleanValue MISSILE_MEASURED_TARGET_VELOCITY;
    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> EXTRA_TARGET_TYPES;
 
    // --- F-16 ------------------------------------------------------------------------------------------------------
@@ -72,6 +73,14 @@ public final class Config {
       EXTRA_TARGET_TYPES = b.comment("Extra entity type ids AI units treat as hostile, e.g. [\"minecraft:pillager\", \"somemod:soldier\"].",
             "By default only players and vehicles are targets (animals / villagers / random mobs are ignored).")
          .defineListAllowEmpty("extraTargetTypes", List.of(), o -> o instanceof String s && ResourceLocation.tryParse(s) != null);
+      b.pop();
+
+      b.push("missiles");
+      MISSILE_MEASURED_TARGET_VELOCITY = b.comment(
+            "SBW / DragonRise missiles (AIM-120, 9M336, AGM-65, Kh-39 ...) aim at a predicted intercept point computed from the",
+            "target's motion. Player-driven vehicles and this addon's jets report zero motion on the server, so missiles fell back",
+            "to pure pursuit. true = use the target's measured velocity (applies to every missile, players' included); false = SBW behaviour.")
+         .define("measuredTargetVelocity", true);
       b.pop();
 
       b.push("f16");
