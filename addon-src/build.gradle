@@ -23,13 +23,18 @@ minecraft {
 }
 
 repositories {
-    // Superb Warfare / DragonRise jars live in ../mods; they are only needed at runtime,
-    // the addon talks to them via cached reflection so it has no compile-time dependency.
     mavenCentral()
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // Server-side AI still talks to Superb Warfare through cached reflection (Sbw.java). The client-only mixins in
+    // com.f16addon.mixin (tactical map performance / UI) are compiled against the SBW jar shipped in ../mods.
+    // SBW is Kotlin and its jar is already SRG-named, so it is a plain compile-only file dependency; every mixin
+    // targeting it uses remap = false and needs no refmap.
+    compileOnly files("../mods/superbwarfare-0.8.9.2-mc1.20.1-65d985a64-all.jar")
+    compileOnly 'org.jetbrains.kotlin:kotlin-stdlib:1.9.0'
 }
 
 tasks.named('processResources', ProcessResources).configure {
@@ -43,6 +48,7 @@ tasks.named('jar', Jar).configure {
             'Specification-Title'   : 'enemyforces',
             'Implementation-Title'  : 'Enemy Forces Addon',
             'Implementation-Version': version,
+            'MixinConfigs'          : 'f16addon.mixins.json',
         ])
     }
     finalizedBy 'reobfJar'

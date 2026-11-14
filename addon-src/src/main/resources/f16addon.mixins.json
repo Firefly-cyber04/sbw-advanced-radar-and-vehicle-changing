@@ -1,0 +1,14 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.f16addon.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "MapEntityRendererMixin",
+    "TacticalMapCacheMixin",
+    "TacticalMapScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
