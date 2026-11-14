@@ -97,6 +97,64 @@ public final class MapDraw {
       triangle(x1, y1, x2, y2, x2, y1, argb);
    }
 
+   /** Rectangle with a vertical gradient. */
+   public void rectV(float x1, float y1, float x2, float y2, int top, int bottom) {
+      triangle(x1, y1, top, x1, y2, bottom, x2, y2, bottom);
+      triangle(x1, y1, top, x2, y2, bottom, x2, y1, top);
+   }
+
+   /** Rectangle with a horizontal gradient. */
+   public void rectH(float x1, float y1, float x2, float y2, int left, int right) {
+      triangle(x1, y1, left, x1, y2, left, x2, y2, right);
+      triangle(x1, y1, left, x2, y2, right, x2, y1, right);
+   }
+
+   /** 1-px-style outline drawn inside the rectangle. */
+   public void frame(float x1, float y1, float x2, float y2, float w, int argb) {
+      rect(x1, y1, x2, y1 + w, argb);
+      rect(x1, y2 - w, x2, y2, argb);
+      rect(x1, y1 + w, x1 + w, y2 - w, argb);
+      rect(x2 - w, y1 + w, x2, y2 - w, argb);
+   }
+
+   /** L-shaped corner brackets (HUD style) on the four corners of the rectangle. */
+   public void corners(float x1, float y1, float x2, float y2, float len, float w, int argb) {
+      rect(x1, y1, x1 + len, y1 + w, argb);
+      rect(x1, y1 + w, x1 + w, y1 + len, argb);
+      rect(x2 - len, y1, x2, y1 + w, argb);
+      rect(x2 - w, y1 + w, x2, y1 + len, argb);
+      rect(x1, y2 - w, x1 + len, y2, argb);
+      rect(x1, y2 - len, x1 + w, y2 - w, argb);
+      rect(x2 - len, y2 - w, x2, y2, argb);
+      rect(x2 - w, y2 - len, x2, y2 - w, argb);
+   }
+
+   /** Filled disc. */
+   public void disc(float cx, float cy, float radius, int argb) {
+      int segments = Mth.clamp((int) (radius * 0.8F), 8, 48);
+      float px = cx + radius;
+      float py = cy;
+      for (int i = 1; i <= segments; i++) {
+         float a = Mth.TWO_PI * i / segments;
+         float nx = cx + Mth.cos(a) * radius;
+         float ny = cy + Mth.sin(a) * radius;
+         triangle(cx, cy, px, py, nx, ny, argb);
+         px = nx;
+         py = ny;
+      }
+   }
+
+   /** Small diamond (rotated square) of half-size {@code r}. */
+   public void diamond(float cx, float cy, float r, int argb) {
+      triangle(cx, cy - r, cx - r, cy, cx + r, cy, argb);
+      triangle(cx - r, cy, cx, cy + r, cx + r, cy, argb);
+   }
+
+   /** Pixel width of {@code text} at {@code scale}. */
+   public static float width(String text, float scale) {
+      return Minecraft.getInstance().font.width(text) * scale;
+   }
+
    public void line(float x1, float y1, float x2, float y2, float width, int argb) {
       float dx = x2 - x1;
       float dy = y2 - y1;
@@ -269,9 +327,11 @@ public final class MapDraw {
    // Flush
    // ----------------------------------------------------------------------------------------------------------------
 
-   /** Draws geometry, then icons, then text, and resets the batch. Leaves blend enabled and shader color white. */
+   /** Draws geometry, then icons, then text, and resets the batch. Leaves blend enabled, culling enabled and shader color white. */
    public void flush(GuiGraphics graphics) {
       Matrix4f matrix = graphics.pose().last().pose();
+      // GUI rendering keeps back-face culling on; lines / arcs / sectors are emitted with either winding.
+      RenderSystem.disableCull();
       RenderSystem.enableBlend();
       RenderSystem.defaultBlendFunc();
       RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
@@ -324,6 +384,7 @@ public final class MapDraw {
       }
 
       RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
+      RenderSystem.enableCull();
    }
 
    public static int withAlpha(int rgb, float alpha) {
