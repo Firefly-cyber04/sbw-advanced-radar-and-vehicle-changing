@@ -1,0 +1,39 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="f16addon"
+version="${version}"
+displayName="Enemy Forces Addon"
+authors="DeepSeek Harness"
+description='''Enemy F-16 / BMPT-72 / T-80 deployer addon for DragonRise Reforge + Superb Warfare.
+Spawns configured enemy units with ammo and independent AI weapons.'''
+
+[[dependencies.f16addon]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.f16addon]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.21)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.f16addon]]
+modId="superbwarfare"
+mandatory=true
+versionRange="[0.8.9,0.9)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.f16addon]]
+modId="dragonrise_reforge"
+mandatory=true
+versionRange="[1.5.0,2)"
+ordering="AFTER"
+side="BOTH"

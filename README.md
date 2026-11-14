@@ -1,16 +1,27 @@
-# Enemy Forces Addon 1.0.0
+# Enemy Forces Addon 1.1.0
 
 Minecraft **1.20.1 / Forge 47.4.x** 的敌方部队与空战扩展整合包。
 
 本仓库包含：
 
-- `enemyforces-1.0.0.jar`：Enemy Forces 附属本体
+- `enemyforces-1.1.0.jar`：Enemy Forces 附属本体（源码见 `addon-src/`）
 - `superbwarfare-0.8.9.2-...jar`：修改过的 Superb Warfare
 - `dragonrise_reforge-1.5.1-release.jar`：修改过的 DragonRise Reforge
 - `docs/F16_ADDON.md`：完整功能与参数说明
 - `config/superbwarfare-server.toml`：当前使用的服务端配置参考
+- `config/f16addon-server.toml`：附属 AI 配置（1.1.0 新增）
+- `docs/PERF_AND_TARGETING_1.1.0.md`：1.1.0 卡顿与索敌修复说明、基准数据
 
 > **重要**：Superb Warfare 与 DragonRise 是第三方模组，本仓库中的对应 jar 是**修改版**。原模组版权归原作者所有；使用前请备份原 jar。
+
+---
+
+## 1.1.0 更新摘要
+
+- **卡顿**：不再每 tick 遍历全部实体、不再做 2000 格 AABB 扫描；高度图/视线查询不再同步加载区块；AI 只在实体 tick 区块运行，空维度暂停时 AI 也暂停；反射与类名判断全部缓存。同场景基准 MSPT 由 6–22 ms（持续上升）降至约 3 ms，AI 自身约 0.05 ms/tick。
+- **索敌**：修复 F-16 永远识别不到载具、却会攻击牛/村民的问题；不再随机丢掉正在交战的目标；玩家与所乘载具合并为一个目标；黄蜂按威胁和剩余飞行时间排序、多台发射架共享交战板（shoot-look-shoot）、修正发射朝向；地面单位优先打可见目标、不再瞬移上悬崖。
+- **新增**：`serverconfig/f16addon-server.toml` 全部参数可调；`/f16addon perf` 性能统计；启动时 SBW API 自检。
+- 详见 [docs/PERF_AND_TARGETING_1.1.0.md](docs/PERF_AND_TARGETING_1.1.0.md)。
 
 ---
 
@@ -19,7 +30,7 @@ Minecraft **1.20.1 / Forge 47.4.x** 的敌方部队与空战扩展整合包。
 1. 完全退出 Minecraft。
 2. 备份 `.minecraft/mods/` 中现有的三个同名 jar。
 3. 将 `mods/` 下的三个 jar 复制到 `.minecraft/mods/`。
-4. 可选：将 `config/superbwarfare-server.toml` 放到存档的 `serverconfig/` 或服务端 `config/`。
+4. 可选：将 `config/superbwarfare-server.toml`、`config/f16addon-server.toml` 放到存档的 `serverconfig/`（附属配置不放也会自动生成默认值）。
 5. 重新启动游戏/服务器。
 
 不要在游戏运行时覆盖 jar，否则 Forge 的 `SecureJarHandler` 可能混用旧类索引并崩溃。
@@ -147,6 +158,7 @@ projectile_chunk_age = 10
 - Forge **47.4.x**（当前环境 47.4.23）
 - Java **17**
 - 需要 Superb Warfare 与 DragonRise Reforge 的对应修改版 jar
+- Superb Warfare 需要 Kotlin for Forge ≥ 4.11.0
 - 建议同时安装 Embeddium 等客户端优化模组；本包不包含第三方渲染模组
 
 ---
@@ -167,12 +179,15 @@ projectile_chunk_age = 10
 .
 ├─ README.md
 ├─ SHA256SUMS.txt
+├─ addon-src/                     # 附属源码（ForgeGradle，./gradlew build）
 ├─ config/
+│  ├─ f16addon-server.toml
 │  └─ superbwarfare-server.toml
 ├─ docs/
-│  └─ F16_ADDON.md
+│  ├─ F16_ADDON.md
+│  └─ PERF_AND_TARGETING_1.1.0.md
 └─ mods/
-   ├─ enemyforces-1.0.0.jar
+   ├─ enemyforces-1.1.0.jar
    ├─ superbwarfare-0.8.9.2-mc1.20.1-65d985a64-all.jar
    └─ dragonrise_reforge-1.5.1-release.jar
 ```

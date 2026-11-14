@@ -1,0 +1,71 @@
+
+[general]
+	#Ticks before any projectile is discarded (cruise missiles exempt). 500 = 25 s.
+	#Range: 20 ~ 72000
+	projectileMaxLifetime = 500
+	#Ticks before IR air-to-air missiles (AIM-9 / PL-10 / R-73 / 9M336 ...) are discarded.
+	#Range: 20 ~ 72000
+	irAamMaxLifetime = 160
+	#Upper bound of line-of-sight raycasts a single unit may do per target scan.
+	#Candidates are sorted by priority first, so only the best few are ever raycast.
+	#Range: 1 ~ 64
+	maxLosChecksPerScan = 4
+	#Whether AI units attack players in creative mode (spectators are never attacked).
+	targetCreativePlayers = true
+	#Whether AI units attack unmanned vehicles that do not belong to a hostile scoreboard team.
+	targetEmptyVehicles = false
+	#Extra entity type ids AI units treat as hostile, e.g. ["minecraft:pillager", "somemod:soldier"].
+	#By default only players and vehicles are targets (animals / villagers / random mobs are ignored).
+	extraTargetTypes = []
+
+[f16]
+	#Range: 64.0 ~ 4096.0
+	scanRange = 1024.0
+	#Detection range against 5th-gen aircraft (J-20 / F-22 / F-35 / Su-57 ...).
+	#Range: 32.0 ~ 4096.0
+	stealthScanRange = 512.0
+	#Range: 5 ~ 400
+	scanInterval = 40
+	#Delay between acquiring a new target and the first shot.
+	#Range: 0 ~ 200
+	reactionTicks = 15
+	#Chance that a scan fails to acquire a NEW target (radar clutter).
+	#Unlike 1.0.0 this never drops a target the jet is already fighting.
+	#Range: 0.0 ~ 0.95
+	detectionFailureChance = 0.15
+	#Max air-to-air / air-to-ground missiles from enemy jets in flight against one target.
+	#Range: 1 ~ 16
+	maxMissilesPerTarget = 2
+	#Jets that get further than this from their home point break off and fly back.
+	#Range: 128.0 ~ 16384.0
+	leashRadius = 1536.0
+
+[ground]
+	#Range: 16.0 ~ 2048.0
+	scanRange = 328.0
+	#Range: 8.0 ~ 2048.0
+	attackRange = 160.0
+	#Range: 5 ~ 400
+	scanInterval = 20
+	#Whether tanks waste main-gun rounds on fixed-wing aircraft. Helicopters / drones are always engaged.
+	engageJets = false
+
+[sam]
+	#Range: 32.0 ~ 4096.0
+	range = 1000.0
+	#Range: 16.0 ~ 4096.0
+	stealthRange = 400.0
+	#Range: 2 ~ 200
+	scanInterval = 10
+	#Range: 5 ~ 400
+	fireInterval = 40
+	#Shoot-look-shoot: max SAM missiles in flight against one aircraft (all launchers combined).
+	#Range: 1 ~ 16
+	missilesPerAircraft = 2
+	#Max SAM missiles in flight against one incoming missile / shell.
+	#Range: 1 ~ 16
+	missilesPerProjectile = 1
+	#1.0.0 behaviour: intercept every hostile projectile in range, even ones flying away from
+	#everything friendly. Default false = only projectiles that threaten the SAM or a friendly unit.
+	engageNonThreatProjectiles = false
+
