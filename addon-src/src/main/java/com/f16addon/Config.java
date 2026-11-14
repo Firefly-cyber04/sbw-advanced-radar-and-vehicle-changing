@@ -22,6 +22,7 @@ public final class Config {
    public static final ForgeConfigSpec.IntValue MAX_LOS_CHECKS_PER_SCAN;
    public static final ForgeConfigSpec.BooleanValue TARGET_CREATIVE_PLAYERS;
    public static final ForgeConfigSpec.BooleanValue TARGET_EMPTY_VEHICLES;
+   public static final ForgeConfigSpec.BooleanValue MISSILE_MEASURED_TARGET_VELOCITY;
    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> EXTRA_TARGET_TYPES;
 
    // --- F-16 ------------------------------------------------------------------------------------------------------
@@ -32,12 +33,16 @@ public final class Config {
    public static final ForgeConfigSpec.DoubleValue F16_DETECTION_FAILURE;
    public static final ForgeConfigSpec.IntValue F16_MAX_MISSILES_PER_TARGET;
    public static final ForgeConfigSpec.DoubleValue F16_LEASH_RADIUS;
+   public static final ForgeConfigSpec.DoubleValue F16_MIN_CLEARANCE;
+   public static final ForgeConfigSpec.BooleanValue F16_EVASIVE;
+   public static final ForgeConfigSpec.DoubleValue F16_EVASION_RANGE;
 
    // --- ground units ------------------------------------------------------------------------------------------------
    public static final ForgeConfigSpec.DoubleValue GROUND_SCAN_RANGE;
    public static final ForgeConfigSpec.DoubleValue GROUND_ATTACK_RANGE;
    public static final ForgeConfigSpec.IntValue GROUND_SCAN_INTERVAL;
    public static final ForgeConfigSpec.BooleanValue GROUND_ENGAGE_JETS;
+   public static final ForgeConfigSpec.BooleanValue GROUND_AVOID_WATER;
 
    // --- SAM (Wasp) --------------------------------------------------------------------------------------------------
    public static final ForgeConfigSpec.DoubleValue SAM_RANGE;
@@ -70,6 +75,14 @@ public final class Config {
          .defineListAllowEmpty("extraTargetTypes", List.of(), o -> o instanceof String s && ResourceLocation.tryParse(s) != null);
       b.pop();
 
+      b.push("missiles");
+      MISSILE_MEASURED_TARGET_VELOCITY = b.comment(
+            "SBW / DragonRise missiles (AIM-120, 9M336, AGM-65, Kh-39 ...) aim at a predicted intercept point computed from the",
+            "target's motion. Player-driven vehicles and this addon's jets report zero motion on the server, so missiles fell back",
+            "to pure pursuit. true = use the target's measured velocity (applies to every missile, players' included); false = SBW behaviour.")
+         .define("measuredTargetVelocity", true);
+      b.pop();
+
       b.push("f16");
       F16_SCAN_RANGE = b.defineInRange("scanRange", 1024.0, 64.0, 4096.0);
       F16_STEALTH_RANGE = b.comment("Detection range against 5th-gen aircraft (J-20 / F-22 / F-35 / Su-57 ...).")
@@ -84,6 +97,13 @@ public final class Config {
          .defineInRange("maxMissilesPerTarget", 2, 1, 16);
       F16_LEASH_RADIUS = b.comment("Jets that get further than this from their home point break off and fly back.")
          .defineInRange("leashRadius", 1536.0, 128.0, 16384.0);
+      F16_MIN_CLEARANCE = b.comment("Terrain clearance in cruise / patrol. Air combat flies down to 80 % of it, bomb / gun dives to 30 blocks,",
+            "and nothing ever goes below 10 blocks above the ground.")
+         .defineInRange("minGroundClearance", 50.0, 15.0, 200.0);
+      F16_EVASIVE = b.comment("Jets beam (turn perpendicular to) closing air-to-air missiles locked on them, in addition to dropping decoys.")
+         .define("evasiveManeuvers", true);
+      F16_EVASION_RANGE = b.comment("Distance at which a closing missile triggers the evasive manoeuvre.")
+         .defineInRange("evasionRange", 320.0, 32.0, 2048.0);
       b.pop();
 
       b.push("ground");
@@ -92,6 +112,8 @@ public final class Config {
       GROUND_SCAN_INTERVAL = b.defineInRange("scanInterval", 20, 5, 400);
       GROUND_ENGAGE_JETS = b.comment("Whether tanks waste main-gun rounds on fixed-wing aircraft. Helicopters / drones are always engaged.")
          .define("engageJets", false);
+      GROUND_AVOID_WATER = b.comment("Ground units steer around water / lava instead of driving into it.")
+         .define("avoidWater", true);
       b.pop();
 
       b.push("sam");

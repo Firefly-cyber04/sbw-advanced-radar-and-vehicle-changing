@@ -18,6 +18,12 @@
 	#By default only players and vehicles are targets (animals / villagers / random mobs are ignored).
 	extraTargetTypes = []
 
+[missiles]
+	#SBW / DragonRise missiles (AIM-120, 9M336, AGM-65, Kh-39 ...) aim at a predicted intercept point computed from the
+	#target's motion. Player-driven vehicles and this addon's jets report zero motion on the server, so missiles fell back
+	#to pure pursuit. true = use the target's measured velocity (applies to every missile, players' included); false = SBW behaviour.
+	measuredTargetVelocity = true
+
 [f16]
 	#Range: 64.0 ~ 4096.0
 	scanRange = 1024.0
@@ -39,6 +45,15 @@
 	#Jets that get further than this from their home point break off and fly back.
 	#Range: 128.0 ~ 16384.0
 	leashRadius = 1536.0
+	#Terrain clearance in cruise / patrol. Air combat flies down to 80 % of it, bomb / gun dives to 30 blocks,
+	#and nothing ever goes below 10 blocks above the ground.
+	#Range: 15.0 ~ 200.0
+	minGroundClearance = 50.0
+	#Jets beam (turn perpendicular to) closing air-to-air missiles locked on them, in addition to dropping decoys.
+	evasiveManeuvers = true
+	#Distance at which a closing missile triggers the evasive manoeuvre.
+	#Range: 32.0 ~ 2048.0
+	evasionRange = 320.0
 
 [ground]
 	#Range: 16.0 ~ 2048.0
@@ -49,6 +64,8 @@
 	scanInterval = 20
 	#Whether tanks waste main-gun rounds on fixed-wing aircraft. Helicopters / drones are always engaged.
 	engageJets = false
+	#Ground units steer around water / lava instead of driving into it.
+	avoidWater = true
 
 [sam]
 	#Range: 32.0 ~ 4096.0

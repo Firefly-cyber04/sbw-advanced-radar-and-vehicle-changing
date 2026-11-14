@@ -1,0 +1,21 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.f16addon.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "Agm65EntityMixin",
+    "Aim120EntityMixin",
+    "MissileProjectileMixin",
+    "RadarScannerMixin",
+    "Ru9m336MissileEntityMixin"
+  ],
+  "client": [
+    "MapEntityRendererMixin",
+    "TacticalMapCacheMixin",
+    "TacticalMapScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
