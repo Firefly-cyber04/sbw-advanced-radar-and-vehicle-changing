@@ -44,13 +44,7 @@ public final class TargetLockClient {
             if (controller != null && controller != player) {
                return false;
             } else {
-               try {
-                  Object type = vehicle.getClass().getMethod("getVehicleType").invoke(vehicle);
-                  String name = type instanceof Enum<?> e ? e.name() : String.valueOf(type);
-                  return name.contains("AIRPLANE") || name.contains("HELICOPTER") || name.contains("AIRSHIP") || name.contains("DRONE");
-               } catch (RuntimeException | ReflectiveOperationException var6) {
-                  return false;
-               }
+               return com.f16addon.Sbw.isAircraft(vehicle);
             }
          }
       }

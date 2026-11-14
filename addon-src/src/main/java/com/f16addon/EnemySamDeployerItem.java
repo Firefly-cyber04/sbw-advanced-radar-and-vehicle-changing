@@ -11,14 +11,12 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Item.Properties;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
-import net.minecraftforge.common.extensions.IForgeEntity;
 import net.minecraftforge.registries.ForgeRegistries;
 
 public class EnemySamDeployerItem extends Item {
@@ -26,95 +24,97 @@ public class EnemySamDeployerItem extends Item {
    private final String displayName;
    private final String enemyTag;
 
-   public EnemySamDeployerItem(Properties var1, String var2, String var3, String var4) {
-      super(var1);
-      this.entityPath = var2;
-      this.displayName = var3;
-      this.enemyTag = var4;
+   public EnemySamDeployerItem(Item.Properties properties, String entityPath, String displayName, String enemyTag) {
+      super(properties);
+      this.entityPath = entityPath;
+      this.displayName = displayName;
+      this.enemyTag = enemyTag;
    }
 
-   public InteractionResult useOn(UseOnContext var1) {
-      Level var2 = var1.getLevel();
-      Player var3 = var1.getPlayer();
-      if (var2.isClientSide) {
+   @Override
+   public InteractionResult useOn(UseOnContext context) {
+      Level level = context.getLevel();
+      if (level.isClientSide) {
          return InteractionResult.SUCCESS;
-      } else {
-         Vec3 var4 = var1.getClickLocation().add(0.0, 1.0, 0.0);
-         return this.spawn(var2, var3, var4) ? InteractionResult.CONSUME : InteractionResult.FAIL;
       }
+
+      Vec3 pos = context.getClickLocation().add(0.0, 1.0, 0.0);
+      return this.spawn(level, context.getPlayer(), pos) ? InteractionResult.CONSUME : InteractionResult.FAIL;
    }
 
-   public InteractionResultHolder<ItemStack> use(Level var1, Player var2, InteractionHand var3) {
-      ItemStack var4 = var2.getItemInHand(var3);
-      if (var1.isClientSide) {
-         return InteractionResultHolder.success(var4);
-      } else {
-         Vec3 var5 = var2.position().add(var2.getLookAngle().scale(6.0)).add(0.0, 1.0, 0.0);
-         return this.spawn(var1, var2, var5) ? InteractionResultHolder.consume(var4) : InteractionResultHolder.fail(var4);
+   @Override
+   public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+      ItemStack stack = player.getItemInHand(hand);
+      if (level.isClientSide) {
+         return InteractionResultHolder.success(stack);
       }
+
+      Vec3 pos = player.position().add(player.getLookAngle().scale(6.0)).add(0.0, 1.0, 0.0);
+      return this.spawn(level, player, pos) ? InteractionResultHolder.consume(stack) : InteractionResultHolder.fail(stack);
    }
 
-   private boolean spawn(Level var1, Player var2, Vec3 var3) {
-      EntityType var4 = (EntityType)ForgeRegistries.ENTITY_TYPES.getValue(new ResourceLocation("dragonrise_reforge", this.entityPath));
-      if (var4 == null) {
-         message(var2, "Missing entity type dragonrise_reforge:" + this.entityPath, ChatFormatting.RED);
+   private boolean spawn(Level level, Player player, Vec3 pos) {
+      EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.tryParse("dragonrise_reforge:" + this.entityPath));
+      if (type == null) {
+         message(player, "Missing entity type dragonrise_reforge:" + this.entityPath, ChatFormatting.RED);
          return false;
-      } else {
-         Entity var5 = var4.create(var1);
-         if (var5 == null) {
-            return false;
-         } else {
-            float var6 = var2 != null ? var2.getYRot() : 0.0F;
-            var5.moveTo(var3.x, var3.y, var3.z, var6, 0.0F);
-            var5.setCustomName(Component.literal(this.displayName));
-            var5.setCustomNameVisible(true);
-            var5.addTag("enemy_sam");
-            var5.addTag(this.enemyTag);
-            if (!var1.addFreshEntity(var5)) {
-               return false;
-            } else if (!F16Addon.initializeGunData(var5)) {
-               var5.discard();
-               message(var2, "Wasp SAM gun data failed to initialize; see the log.", ChatFormatting.RED);
-               return false;
-            } else {
-               joinEnemyTeam(var1, var5);
-               this.fillAmmo(var5);
-               message(var2, this.displayName + " deployed as a stationary enemy SAM.", ChatFormatting.YELLOW);
-               return true;
-            }
-         }
       }
+
+      Entity entity = type.create(level);
+      if (entity == null) {
+         return false;
+      }
+
+      float yaw = player != null ? player.getYRot() : 0.0F;
+      entity.moveTo(pos.x, pos.y, pos.z, yaw, 0.0F);
+      entity.setCustomName(Component.literal(this.displayName));
+      entity.setCustomNameVisible(true);
+      entity.addTag(UnitTracker.TAG_SAM);
+      entity.addTag(this.enemyTag);
+      if (!level.addFreshEntity(entity)) {
+         return false;
+      }
+
+      if (!F16Addon.initializeGunData(entity)) {
+         entity.discard();
+         message(player, "Wasp SAM gun data failed to initialize; see the log.", ChatFormatting.RED);
+         return false;
+      }
+
+      joinEnemyTeam(level, entity);
+      fillAmmo(entity);
+      message(player, this.displayName + " deployed as a stationary enemy SAM.", ChatFormatting.YELLOW);
+      return true;
    }
 
-   private static void joinEnemyTeam(Level var0, Entity var1) {
-      try {
-         Scoreboard var2 = var0.getScoreboard();
-         PlayerTeam var3 = var2.getPlayerTeam("enemy");
-         if (var3 == null) {
-            var3 = var2.addPlayerTeam("enemy");
-            var3.setColor(ChatFormatting.RED);
-            var3.setAllowFriendlyFire(false);
-         }
-
-         var2.addPlayerToTeam(var1.getStringUUID(), var3);
-      } catch (Exception var4) {
+   private static void joinEnemyTeam(Level level, Entity entity) {
+      Scoreboard scoreboard = level.getScoreboard();
+      PlayerTeam team = scoreboard.getPlayerTeam(Targeting.ENEMY_TEAM);
+      if (team == null) {
+         team = scoreboard.addPlayerTeam(Targeting.ENEMY_TEAM);
+         team.setColor(ChatFormatting.RED);
+         team.setAllowFriendlyFire(false);
       }
+
+      scoreboard.addPlayerToTeam(entity.getStringUUID(), team);
    }
 
-   private void fillAmmo(Entity var1) {
-      ((IForgeEntity)var1).getCapability(ForgeCapabilities.ITEM_HANDLER).ifPresent(var0 -> {
-         Item var1x = (Item)ForgeRegistries.ITEMS.getValue(new ResourceLocation("superbwarfare", "medium_anti_air_missile"));
-         if (var1x != null) {
-            for (int var2 = 0; var2 < var0.getSlots(); var2++) {
-               var0.insertItem(var2, new ItemStack(var1x, 64), false);
-            }
+   private static void fillAmmo(Entity entity) {
+      Item missile = ForgeRegistries.ITEMS.getValue(ResourceLocation.tryParse("superbwarfare:medium_anti_air_missile"));
+      if (missile == null) {
+         return;
+      }
+
+      entity.getCapability(ForgeCapabilities.ITEM_HANDLER).ifPresent(handler -> {
+         for (int slot = 0; slot < handler.getSlots(); slot++) {
+            handler.insertItem(slot, new ItemStack(missile, 64), false);
          }
       });
    }
 
-   private static void message(Player var0, String var1, ChatFormatting var2) {
-      if (var0 != null) {
-         var0.displayClientMessage(Component.literal(var1).withStyle(var2), false);
+   private static void message(Player player, String text, ChatFormatting color) {
+      if (player != null) {
+         player.displayClientMessage(Component.literal(text).withStyle(color), false);
       }
    }
 }

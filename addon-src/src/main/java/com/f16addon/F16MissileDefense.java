@@ -1,101 +1,69 @@
 package com.f16addon;
 
-import java.lang.reflect.Method;
 import java.util.Comparator;
 import java.util.List;
-import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.entity.projectile.Projectile;
 
+/** Lets flares / smoke decoys spoof air-to-air missiles fired by enemy jets. */
 public final class F16MissileDefense {
-   private static final String AAM_TAG = "f16_aam";
+   public static final String AAM_TAG = "f16_aam";
    private static final double DECOY_RANGE = 48.0;
+   private static final int CHECK_INTERVAL = 10;
 
    private F16MissileDefense() {
    }
 
-   public static void tick(ServerLevel level, Entity missile) {
-      if (missile.isAlive() && !missile.getPersistentData().getBoolean("f16_decoyed")) {
-         int cooldown = missile.getPersistentData().getInt("f16_decoy_cd");
-         if (cooldown > 0) {
-            missile.getPersistentData().putInt("f16_decoy_cd", cooldown - 1);
-         } else {
-            missile.getPersistentData().putInt("f16_decoy_cd", 10);
-            String targetId = getString(missile, "getTargetUUID");
-            if (targetId != null && !targetId.isEmpty() && !"none".equals(targetId)) {
-               Entity target;
-               try {
-                  target = level.getEntity(UUID.fromString(targetId));
-               } catch (IllegalArgumentException var10) {
-                  return;
-               }
-
-               if (target != null && target.isAlive()) {
-                  List<Entity> decoys = level.getEntitiesOfClass(Entity.class, target.getBoundingBox().inflate(48.0), e -> isDecoy(missile, e));
-                  if (!decoys.isEmpty()) {
-                     decoys.sort(Comparator.comparingDouble(missile::distanceToSqr));
-                     float chance = Math.min(0.75F, 0.32F + 0.1F * (float)decoys.size());
-                     if (!(level.random.nextFloat() >= chance)) {
-                        Entity decoy = decoys.get(0);
-                        setString(missile, "setTargetUUID", decoy.getUUID().toString());
-                        setVec(missile, "setTargetPos", decoy.position());
-                        setBoolean(missile, "setDistracted", true);
-
-                        try {
-                           Method guide = missile.getClass().getMethod("setGuideType", int.class);
-                           guide.invoke(missile, 0);
-                        } catch (ReflectiveOperationException var9) {
-                        }
-
-                        CompoundTag data = missile.getPersistentData();
-                        data.putBoolean("f16_decoyed", true);
-                        data.putString("f16_decoy_source", targetId);
-                     }
-                  }
-               }
-            }
-         }
+   /** Missiles launched by an enemy jet (by our flight AI, or by a crew core / anything else sitting in the jet). */
+   public static boolean isEnemyAam(Entity entity) {
+      if (entity.getTags().contains(AAM_TAG)) {
+         return true;
       }
-   }
 
-   private static boolean isDecoy(Entity missile, Entity entity) {
-      if (entity != missile && entity.isAlive()) {
-         String name = entity.getClass().getSimpleName();
-         return name.contains("FlareDecoy") || name.contains("SmokeDecoy") || name.contains("DecoyEntity");
-      } else {
+      if (!(entity instanceof Projectile projectile) || !Classify.is(entity, Classify.IR_AAM | Classify.RADAR_AAM)) {
          return false;
       }
+
+      Entity owner = projectile.getOwner();
+      return owner != null && owner.getTags().contains(UnitTracker.TAG_F16);
    }
 
-   private static String getString(Entity entity, String method) {
-      try {
-         Object value = entity.getClass().getMethod(method).invoke(entity);
-         return value instanceof String ? (String)value : null;
-      } catch (ReflectiveOperationException var3) {
-         return null;
+   public static void tick(ServerLevel level, Entity missile) {
+      // Staggered per missile instead of a per-missile NBT countdown.
+      if ((missile.tickCount + missile.getId()) % CHECK_INTERVAL != 0 || !missile.isAlive()) {
+         return;
       }
-   }
 
-   private static void setString(Entity entity, String method, String value) {
-      try {
-         entity.getClass().getMethod(method, String.class).invoke(entity, value);
-      } catch (ReflectiveOperationException var4) {
+      CompoundTag data = missile.getPersistentData();
+      if (data.getBoolean("f16_decoyed")) {
+         return;
       }
-   }
 
-   private static void setVec(Entity entity, String method, Vec3 value) {
-      try {
-         entity.getClass().getMethod(method, Vec3.class).invoke(entity, value);
-      } catch (ReflectiveOperationException var4) {
+      String targetId = Sbw.targetUuid(missile);
+      Entity target = Targeting.byUuid(level, targetId);
+      if (target == null || !target.isAlive()) {
+         return;
       }
-   }
 
-   private static void setBoolean(Entity entity, String method, boolean value) {
-      try {
-         entity.getClass().getMethod(method, boolean.class).invoke(entity, value);
-      } catch (ReflectiveOperationException var4) {
+      List<Entity> decoys = level.getEntities(missile, target.getBoundingBox().inflate(DECOY_RANGE), e -> e.isAlive() && Classify.is(e, Classify.DECOY));
+      if (decoys.isEmpty()) {
+         return;
       }
+
+      float chance = Math.min(0.75F, 0.32F + 0.1F * decoys.size());
+      if (level.random.nextFloat() >= chance) {
+         return;
+      }
+
+      decoys.sort(Comparator.comparingDouble(missile::distanceToSqr));
+      Entity decoy = decoys.get(0);
+      Sbw.call(missile, Sbw.SET_TARGET_UUID, decoy.getStringUUID());
+      Sbw.call(missile, Sbw.SET_TARGET_POS, decoy.position());
+      Sbw.call(missile, Sbw.SET_DISTRACTED, true);
+      Sbw.call(missile, Sbw.SET_GUIDE_TYPE, 0);
+      data.putBoolean("f16_decoyed", true);
+      data.putString("f16_decoy_source", targetId);
    }
 }

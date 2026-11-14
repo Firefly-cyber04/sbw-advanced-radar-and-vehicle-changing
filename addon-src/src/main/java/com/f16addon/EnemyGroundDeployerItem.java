@@ -56,7 +56,7 @@ public class EnemyGroundDeployerItem extends Item {
    }
 
    private boolean spawn(Level level, Player player, Vec3 pos) {
-      EntityType<?> type = (EntityType<?>)ForgeRegistries.ENTITY_TYPES.getValue(new ResourceLocation("dragonrise_reforge", this.entityPath));
+      EntityType<?> type = (EntityType<?>)ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.tryParse("dragonrise_reforge:" + this.entityPath));
       if (type == null) {
          if (player != null) {
             player.displayClientMessage(Component.literal("Missing entity type dragonrise_reforge:" + this.entityPath), true);
@@ -118,7 +118,7 @@ public class EnemyGroundDeployerItem extends Item {
    private void fillAmmo(Entity entity) {
       entity.getCapability(ForgeCapabilities.ITEM_HANDLER).ifPresent(handler -> {
          for (int slot = 0; slot < this.ammo.length && slot < handler.getSlots(); slot++) {
-            Item item = (Item)ForgeRegistries.ITEMS.getValue(new ResourceLocation("superbwarfare", this.ammo[slot]));
+            Item item = (Item)ForgeRegistries.ITEMS.getValue(ResourceLocation.tryParse("superbwarfare:" + this.ammo[slot]));
             if (item != null) {
                handler.insertItem(slot, new ItemStack(item, 64), false);
             }

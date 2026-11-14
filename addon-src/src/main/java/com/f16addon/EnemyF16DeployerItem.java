@@ -63,7 +63,7 @@ public class EnemyF16DeployerItem extends Item {
    }
 
    private boolean spawn(Level level, Player player, Vec3 pos) {
-      EntityType<?> type = (EntityType<?>)ForgeRegistries.ENTITY_TYPES.getValue(new ResourceLocation("dragonrise_reforge", "f16c"));
+      EntityType<?> type = (EntityType<?>)ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.tryParse("dragonrise_reforge:f16c"));
       if (type == null) {
          if (player != null) {
             player.displayClientMessage(Component.literal("Missing entity type dragonrise_reforge:f16c"), true);
@@ -130,7 +130,7 @@ public class EnemyF16DeployerItem extends Item {
    private static void fillAmmo(Entity entity) {
       entity.getCapability(ForgeCapabilities.ITEM_HANDLER).ifPresent(handler -> {
          for (int slot = 0; slot < AMMO.length && slot < handler.getSlots(); slot++) {
-            Item item = (Item)ForgeRegistries.ITEMS.getValue(new ResourceLocation("superbwarfare", AMMO[slot]));
+            Item item = (Item)ForgeRegistries.ITEMS.getValue(ResourceLocation.tryParse("superbwarfare:" + AMMO[slot]));
             if (item != null) {
                handler.insertItem(slot, new ItemStack(item, 64), false);
             }

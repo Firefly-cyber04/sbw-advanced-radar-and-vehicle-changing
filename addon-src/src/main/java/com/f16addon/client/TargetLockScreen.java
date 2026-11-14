@@ -146,13 +146,7 @@ public class TargetLockScreen extends Screen {
             if (controller != null && controller != player) {
                return false;
             } else {
-               try {
-                  Object type = vehicle.getClass().getMethod("getVehicleType").invoke(vehicle);
-                  String name = type instanceof Enum<?> e ? e.name() : String.valueOf(type);
-                  return name.contains("AIRPLANE") || name.contains("HELICOPTER") || name.contains("AIRSHIP") || name.contains("DRONE");
-               } catch (RuntimeException | ReflectiveOperationException var6) {
-                  return false;
-               }
+               return com.f16addon.Sbw.isAircraft(vehicle);
             }
          }
       }
@@ -185,7 +179,7 @@ public class TargetLockScreen extends Screen {
    }
 
    private static boolean isValidTarget(Player player, Entity entity) {
-      return entity != player && entity.isAlive() && !entity.isSpectator()
+      return entity != player && entity != player.getRootVehicle() && entity.isAlive() && !entity.isSpectator()
          ? !(entity instanceof ItemEntity)
             && !(entity instanceof ExperienceOrb)
             && !(entity instanceof ArmorStand)
