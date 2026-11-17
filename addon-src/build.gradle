@@ -54,4 +54,21 @@ tasks.named('jar', Jar).configure {
     finalizedBy 'reobfJar'
 }
 
-tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // Foreign-mod injection selectors include both Mojmap and SRG names explicitly.
+    options.compilerArgs += ['-proc:none']
+}
+
+def compileCoreRegression = tasks.register('compileCoreRegression', JavaCompile) {
+    source = files(fileTree('src/main/java/com/f16addon/core') { include '**/*.java' },
+            'src/main/java/com/f16addon/client/map/MapDiskWriter.java', 'tests/CoreRegression.java')
+    destinationDirectory = layout.buildDirectory.dir('core-regression')
+    classpath = configurations.compileClasspath
+    options.release = 17
+}
+tasks.register('coreRegression', JavaExec) {
+    dependsOn compileCoreRegression
+    classpath = files(layout.buildDirectory.dir('core-regression')) + configurations.compileClasspath
+    mainClass = 'CoreRegression'
+}

@@ -54,15 +54,20 @@ public class EnemySamDeployerItem extends Item {
    }
 
    private boolean spawn(Level level, Player player, Vec3 pos) {
+      return deployAt(level, player, pos) != null;
+   }
+
+   /** Reuse deployment initialization for bounded tactical encounters. */
+   public Entity deployAt(Level level, Player player, Vec3 pos) {
       EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.tryParse("dragonrise_reforge:" + this.entityPath));
       if (type == null) {
          message(player, "Missing entity type dragonrise_reforge:" + this.entityPath, ChatFormatting.RED);
-         return false;
+         return null;
       }
 
       Entity entity = type.create(level);
       if (entity == null) {
-         return false;
+         return null;
       }
 
       float yaw = player != null ? player.getYRot() : 0.0F;
@@ -72,19 +77,19 @@ public class EnemySamDeployerItem extends Item {
       entity.addTag(UnitTracker.TAG_SAM);
       entity.addTag(this.enemyTag);
       if (!level.addFreshEntity(entity)) {
-         return false;
+         return null;
       }
 
       if (!F16Addon.initializeGunData(entity)) {
          entity.discard();
          message(player, "Wasp SAM gun data failed to initialize; see the log.", ChatFormatting.RED);
-         return false;
+         return null;
       }
 
       joinEnemyTeam(level, entity);
       fillAmmo(entity);
       message(player, this.displayName + " deployed as a stationary enemy SAM.", ChatFormatting.YELLOW);
-      return true;
+      return entity;
    }
 
    private static void joinEnemyTeam(Level level, Entity entity) {

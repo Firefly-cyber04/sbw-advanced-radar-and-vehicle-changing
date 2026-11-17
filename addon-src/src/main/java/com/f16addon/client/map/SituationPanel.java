@@ -21,6 +21,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
+import java.util.Map;
+import net.minecraft.world.level.Level;
 
 /**
  * Left-hand "situation" panel of the tactical terminal: a PPI radar scope (north-up, sweep with phosphor fade, click a
@@ -78,158 +80,133 @@ public final class SituationPanel {
    }
 
    public static void render(GuiGraphics graphics, int screenWidth, int screenHeight, int mouseX, int mouseY) {
-      HITS.clear();
-      int w = panelWidth(screenWidth);
-      Minecraft mc = Minecraft.getInstance();
-      if (w < PANEL_MIN_W || mc.player == null || mc.level == null) {
-         return;
-      }
-
-      long now = System.currentTimeMillis();
-      if (now - builtAt >= REFRESH_MS || now < builtAt) {
-         builtAt = now;
-         model = build(mc.level, mc.player);
-      }
-
-      Model m = model;
-      MapDraw d = MapDraw.get();
-      int x0 = 8;
-      int y0 = 8;
-      int x1 = x0 + w;
-      int y1 = y0 + (int) (screenHeight * 0.85);
-      int h = y1 - y0;
-      boolean blink = now / 250L % 2L == 0L;
-
-      // Frame + header.
-      d.rectV(x0, y0, x1, y1, BG_TOP, BG_BOTTOM);
-      d.frame(x0, y0, x1, y1, 1.0F, FRAME_DIM);
-      d.corners(x0, y0, x1, y1, 8.0F, 1.0F, m.threats() > 0 ? WARN : ACCENT);
-      d.rectH(x0 + 1, y0 + 1, x1 - 1, y0 + 16, 0xFF153626, 0x00153626);
-      d.rect(x0 + 1, y0 + 16, x1 - 1, y0 + 17, FRAME);
-      d.text("◆ 战术态势", x0 + 6, y0 + 4, ACCENT, 1.0F, false);
-      String link = "LINK";
-      float lw = MapDraw.width(link, 0.75F);
-      d.text(link, x1 - 12 - lw, y0 + 6, DIM, 0.75F, false);
-      d.disc(x1 - 7, y0 + 8.5F, 2.0F, now / 600L % 2L == 0L ? ACCENT : FRAME);
-
-      int tx = x0 + 6;
-      int inner = w - 12;
-      int y = y0 + 22;
-
-      // Radar scope + own-ship data. The scope only takes the height the rest of the panel can spare (the force
-      // summary and at least one contact row always fit), and the own-ship cards sit in a column beside it. The
-      // missile-warning box is always reserved so the layout does not jump when a warning appears.
-      int below = 2 * LINE_H + 3 + 2 * LINE_H + 5 + 18 + LINE_H + 3 + ROW_H + 16;
-      int scope = Math.min(Math.min(y1 - y - 6 - below, inner - 86), (int) (h * 0.42F));
-      if (scope >= 64) {
-         scope(d, tx, y, scope, m, now, mouseX, mouseY);
-         int cx = tx + scope + 6;
-         ownCards(d, m, cx, y, x1 - 6 - cx, (scope - 6) / 4, 1);
-         y += scope + 6;
-      } else {
-         ownCards(d, m, tx, y, inner, 22, 2);
-         y += 2 * 24 + 4;
-      }
-
-      // Vehicle + structure.
-      d.text("载具", tx, y, DIM, 1.0F, false);
-      d.text(TerminalChrome.clip(m.vehicle().isEmpty() ? "— 步行" : m.vehicle(), inner - 30), tx + 26, y, TEXT, 1.0F, false);
-      y += LINE_H;
-      if (m.healthPct() >= 0) {
-         d.text("结构", tx, y, DIM, 1.0F, false);
-         String pct = m.healthPct() + "%";
-         float pw = MapDraw.width(pct, 1.0F);
-         int hpColor = m.healthPct() > 60 ? ACCENT : (m.healthPct() > 30 ? HOSTILE_AIR : WARN);
-         float bx = tx + 26;
-         float bw = inner - 26 - pw - 4;
-         int segments = 10;
-         float seg = bw / segments;
-         int lit = Math.round(m.healthPct() / 10.0F);
-         for (int i = 0; i < segments; i++) {
-            d.rect(bx + i * seg, y + 1, bx + (i + 1) * seg - 1, y + 7, i < lit ? hpColor : 0xFF1A2420);
-         }
-
-         d.text(pct, tx + inner - pw, y, hpColor, 1.0F, false);
-         y += LINE_H;
-      }
-
-      y += 3;
-      // Missile warning.
-      if (m.threats() > 0) {
-         int boxH = 2 * LINE_H + 4;
-         d.rect(x0 + 3, y - 2, x1 - 3, y - 2 + boxH, blink ? 0xC0801010 : 0x90401010);
-         d.frame(x0 + 3, y - 2, x1 - 3, y - 2 + boxH, 1.0F, blink ? WARN : 0xFF802020);
-         d.text("⚠ 导弹告警  ×" + m.threats(), tx, y, blink ? 0xFFFFE0E0 : WARN, 1.0F, true);
-         y += LINE_H;
-         d.text(String.format(Locale.ROOT, "最近 %s   方位 %03d°", ContactRenderer.formatDistance(m.threatDist()), (int) m.threatBearing()),
-            tx, y, 0xFFFFC0C0, 1.0F, false);
-         y += LINE_H + 5;
-      } else {
-         d.text("RWR", tx, y, DIM, 1.0F, false);
-         d.disc(tx + 27, y + 3.5F, 2.0F, ACCENT);
-         d.text("无导弹锁定", tx + 33, y, MapDraw.withAlpha(ACCENT_RGB, 0.8F), 1.0F, false);
-         y += LINE_H + 3;
-      }
-
-      // Force summary chips.
-      int chipW = (inner - 6) / 4;
-      chip(d, tx, y, chipW, "敌", m.hostile(), HOSTILE);
-      chip(d, tx + (chipW + 2), y, chipW, "友", m.friendly(), FRIENDLY);
-      chip(d, tx + 2 * (chipW + 2), y, chipW, "中", m.neutral(), NEUTRAL);
-      chip(d, tx + 3 * (chipW + 2), y, chipW, "弹", m.missiles(), m.missiles() > 0 && blink ? WARN : HOSTILE_AIR);
-      y += 18;
-
-      // Contact list.
-      d.text("敌方接触", tx, y, ACCENT, 1.0F, false);
-      String sorted = "由近到远";
-      d.text(sorted, x1 - 6 - MapDraw.width(sorted, 1.0F), y, FAINT, 1.0F, false);
-      y += LINE_H;
-      d.rectH(tx, y, x1 - 6, y + 1, FRAME, 0x002C5B3C);
-      y += 3;
-
-      int footer = y1 - 13;
-      if (m.rows().isEmpty()) {
-         d.text("雷达/数据链无敌方接触", tx, y + 2, FAINT, 1.0F, false);
-      }
-
-      int index = 0;
-      for (Row row : m.rows()) {
-         if (y + ROW_H > footer) {
-            break;
-         }
-
-         int top = y;
-         int bottom = y + ROW_H - 1;
-         boolean hover = mouseX >= x0 && mouseX < x1 && mouseY >= top && mouseY < bottom;
-         if (hover) {
-            d.rect(x0 + 3, top, x1 - 3, bottom, CARD_HOVER);
-            d.frame(x0 + 3, top, x1 - 3, bottom, 1.0F, ACCENT);
-         } else if (index % 2 == 0) {
-            d.rect(x0 + 3, top, x1 - 3, bottom, 0x40101A16);
-         }
-
-         d.rect(x0 + 3, top, x0 + 5, bottom, row.color());
-         float kw = MapDraw.width(row.kind(), 1.0F);
-         d.rect(tx + 1, top + 1, tx + kw + 5, top + 11, MapDraw.withAlpha(row.color(), 0.22F));
-         d.text(row.kind(), tx + 3, top + 2, row.color(), 1.0F, false);
-         String dist = ContactRenderer.formatDistance(row.dist());
-         float dw = MapDraw.width(dist, 1.0F);
-         d.text(dist, x1 - 7 - dw, top + 2, TEXT, 1.0F, false);
-         d.text(TerminalChrome.clip(row.name(), x1 - 7 - dw - 6 - (tx + kw + 8)), tx + kw + 8, top + 2, TEXT, 1.0F, false);
-         d.text(String.format(Locale.ROOT, "%03d°   ↑%dm", (int) row.bearing(), row.alt()), tx + 3, top + 14, DIM, 0.75F, false);
-         if (row.trend() != 0) {
-            String trend = row.trend() > 0 ? "▲接近" : "▼远离";
-            d.text(trend, x1 - 7 - MapDraw.width(trend, 1.0F), top + 12, row.trend() > 0 ? 0xFFFFC080 : FAINT, 1.0F, false);
-         }
-
-         HITS.add(new double[]{x0, top, x1, bottom, row.x(), row.z()});
-         y += ROW_H;
-         index++;
-      }
-
-      d.rect(x0 + 3, footer - 2, x1 - 3, footer - 1, FRAME_DIM);
-      d.text(TerminalChrome.clip("点选定位 · 点雷达切量程 · Shift测距", inner), tx, footer + 2, FAINT, 1.0F, false);
-      d.flush(graphics);
+       HITS.clear();
+       int w = SituationPanel.panelWidth(screenWidth);
+       Minecraft mc = Minecraft.getInstance();
+       if (w < 150 || mc.player == null || mc.level == null) {
+           return;
+       }
+       long now = System.currentTimeMillis();
+       if (model == null || modelWorld != mc.level || now - builtAt >= 150L || now < builtAt) {
+           if (modelWorld != mc.level)
+               LAST_DIST.clear();
+           modelWorld = mc.level;
+           builtAt = now;
+           model = SituationPanel.build(mc.level, mc.player);
+       }
+       Model m = model;
+       MapDraw d = MapDraw.get();
+       int x0 = 8;
+       int y0 = 8;
+       int x1 = x0 + w;
+       int y1 = y0 + (int) ((double) screenHeight * 0.85);
+       int h = y1 - y0;
+       boolean blink = now / 250L % 2L == 0L;
+       d.rectV(x0, y0, x1, y1, -166651112, -167310325);
+       d.frame(x0, y0, x1, y1, 1.0f, -14928602);
+       d.corners(x0, y0, x1, y1, 8.0f, 1.0f, m.threats() > 0 ? -50373 : -9633894);
+       d.rectH(x0 + 1, y0 + 1, x1 - 1, y0 + 16, -15387098, 1390118);
+       d.rect(x0 + 1, y0 + 16, x1 - 1, y0 + 17, -13870276);
+       d.text("\u25c6 \u6218\u672f\u6001\u52bf", x0 + 6, y0 + 4, -9633894, 1.0f, false);
+       String link = "LINK";
+       float lw = MapDraw.width(link, 0.75f);
+       d.text(link, (float) (x1 - 12) - lw, y0 + 6, -7363686, 0.75f, false);
+       d.disc(x1 - 7, (float) y0 + 8.5f, 2.0f, now / 600L % 2L == 0L ? -9633894 : -13870276);
+       int tx = x0 + 6;
+       int inner = w - 12;
+       int y = y0 + 22;
+       int below = 122;
+       int scope = Math.min(Math.min(y1 - y - 6 - below, inner - 86), (int) ((float) h * 0.42f));
+       if (scope >= 64) {
+           SituationPanel.scope(d, tx, y, scope, m, now, mouseX, mouseY);
+           int cx = tx + scope + 6;
+           SituationPanel.ownCards(d, m, cx, y, x1 - 6 - cx, (scope - 6) / 4, 1);
+           y += scope + 6;
+       } else {
+           SituationPanel.ownCards(d, m, tx, y, inner, 22, 2);
+           y += 52;
+       }
+       d.text("\u8f7d\u5177", tx, y, -7363686, 1.0f, false);
+       d.text(TerminalChrome.clip(m.vehicle().isEmpty() ? "\u2014 \u6b65\u884c" : m.vehicle(), inner - 30), tx + 26, y, -2234400, 1.0f, false);
+       y += 11;
+       if (m.healthPct() >= 0) {
+           d.text("\u7ed3\u6784", tx, y, -7363686, 1.0f, false);
+           String pct = m.healthPct() + "%";
+           float pw = MapDraw.width(pct, 1.0f);
+           int hpColor = m.healthPct() > 60 ? -9633894 : (m.healthPct() > 30 ? -19641 : -50373);
+           float bx = tx + 26;
+           float bw = (float) (inner - 26) - pw - 4.0f;
+           int segments = 10;
+           float seg = bw / (float) segments;
+           int lit = Math.round((float) m.healthPct() / 10.0f);
+           for (int i = 0; i < segments; ++i) {
+               d.rect(bx + (float) i * seg, y + 1, bx + (float) (i + 1) * seg - 1.0f, y + 7, i < lit ? hpColor : -15064032);
+           }
+           d.text(pct, (float) (tx + inner) - pw, y, hpColor, 1.0f, false);
+           y += 11;
+       }
+       y += 3;
+       if (m.threats() > 0) {
+           int boxH = 26;
+           d.rect(x0 + 3, y - 2, x1 - 3, y - 2 + boxH, blink ? -1065349104 : -1874849776);
+           d.frame(x0 + 3, y - 2, x1 - 3, y - 2 + boxH, 1.0f, blink ? -50373 : -8380384);
+           d.text("\u26a0 \u5bfc\u5f39\u544a\u8b66  \u00d7" + m.threats(), tx, y, blink ? -7968 : -50373, 1.0f, true);
+           d.text(String.format(Locale.ROOT, "\u6700\u8fd1 %s   \u65b9\u4f4d %03d\u00b0", ContactRenderer.formatDistance(m.threatDist()), (int) m.threatBearing()), tx, y += 11, -16192, 1.0f, false);
+           y += 16;
+       } else {
+           d.text("RWR", tx, y, -7363686, 1.0f, false);
+           d.disc(tx + 27, (float) y + 3.5f, 2.0f, -9633894);
+           d.text("\u65e0\u5bfc\u5f39\u9501\u5b9a", tx + 33, y, MapDraw.withAlpha(7143322, 0.8f), 1.0f, false);
+           y += 14;
+       }
+       int chipW = (inner - 6) / 4;
+       SituationPanel.chip(d, tx, y, chipW, "\u654c", m.hostile(), -42406);
+       SituationPanel.chip(d, tx + (chipW + 2), y, chipW, "\u53cb", m.friendly(), -10832641);
+       SituationPanel.chip(d, tx + 2 * (chipW + 2), y, chipW, "\u4e2d", m.neutral(), -11702);
+       SituationPanel.chip(d, tx + 3 * (chipW + 2), y, chipW, "\u5f39", m.missiles(), m.missiles() > 0 && blink ? -50373 : -19641);
+       d.text("\u654c\u65b9\u63a5\u89e6", tx, y += 18, -9633894, 1.0f, false);
+       String sorted = "\u7531\u8fd1\u5230\u8fdc";
+       d.text(sorted, (float) (x1 - 6) - MapDraw.width(sorted, 1.0f), y, -10653593, 1.0f, false);
+       d.rectH(tx, y += 11, x1 - 6, y + 1, -13870276, 2906940);
+       y += 3;
+       int footer = y1 - 13;
+       if (m.rows().isEmpty()) {
+           d.text("\u96f7\u8fbe/\u6570\u636e\u94fe\u65e0\u654c\u65b9\u63a5\u89e6", tx, y + 2, -10653593, 1.0f, false);
+       }
+       int index = 0;
+       for (Row row : m.rows()) {
+           boolean hover;
+           if (y + 22 > footer)
+               break;
+           int top = y;
+           int bottom = y + 22 - 1;
+           boolean bl = hover = mouseX >= x0 && mouseX < x1 && mouseY >= top && mouseY < bottom;
+           if (hover) {
+               d.rect(x0 + 3, top, x1 - 3, bottom, -803786716);
+               d.frame(x0 + 3, top, x1 - 3, bottom, 1.0f, -9633894);
+           } else if (index % 2 == 0) {
+               d.rect(x0 + 3, top, x1 - 3, bottom, 1074797078);
+           }
+           d.rect(x0 + 3, top, x0 + 5, bottom, row.color());
+           float kw = MapDraw.width(row.kind(), 1.0f);
+           d.rect(tx + 1, top + 1, (float) tx + kw + 5.0f, top + 11, MapDraw.withAlpha(row.color(), 0.22f));
+           d.text(row.kind(), tx + 3, top + 2, row.color(), 1.0f, false);
+           String dist = ContactRenderer.formatDistance(row.dist());
+           float dw = MapDraw.width(dist, 1.0f);
+           d.text(dist, (float) (x1 - 7) - dw, top + 2, -2234400, 1.0f, false);
+           d.text(TerminalChrome.clip(row.name(), (float) (x1 - 7) - dw - 6.0f - ((float) tx + kw + 8.0f)), (float) tx + kw + 8.0f, top + 2, -2234400, 1.0f, false);
+           d.text(String.format(Locale.ROOT, "%03d\u00b0   \u2191%dm", (int) row.bearing(), row.alt()), tx + 3, top + 14, -7363686, 0.75f, false);
+           if (row.trend() != 0) {
+               String trend = row.trend() > 0 ? "\u25b2\u63a5\u8fd1" : "\u25bc\u8fdc\u79bb";
+               d.text(trend, (float) (x1 - 7) - MapDraw.width(trend, 1.0f), top + 12, row.trend() > 0 ? -16256 : -10653593, 1.0f, false);
+           }
+           HITS.add(new double[] { x0, top, x1, bottom, row.x(), row.z() });
+           y += 22;
+           ++index;
+       }
+       d.rect(x0 + 3, footer - 2, x1 - 3, footer - 1, -14928602);
+       d.text(TerminalChrome.clip("\u70b9\u9009\u5b9a\u4f4d \u00b7 \u70b9\u96f7\u8fbe\u5207\u91cf\u7a0b \u00b7 Shift\u6d4b\u8ddd", inner), tx, footer + 2, -10653593, 1.0f, false);
+       d.flush(graphics);
    }
 
    // ----------------------------------------------------------------------------------------------------------------
@@ -464,135 +441,108 @@ public final class SituationPanel {
    }
 
    private static Model build(ClientLevel level, LocalPlayer player) {
-      Entity body = player.getRootVehicle();
-      Vec3 own = body.position();
-      String vehicle = body == player ? "" : body.getDisplayName().getString();
-      int alt = Mth.floor(own.y);
-      int agl = -1;
-      if (level.hasChunk(Mth.floor(own.x) >> 4, Mth.floor(own.z) >> 4)) {
-         agl = Math.max(0, alt - level.getHeight(Heightmap.Types.WORLD_SURFACE, Mth.floor(own.x), Mth.floor(own.z)));
-      }
-
-      Vec3 v = ContactRenderer.velocityOf(level, body);
-      int speed = (int) Math.round(v.length() * 20.0 * 3.6);
-      int heading = Math.floorMod(Math.round(body.getYRot() + 180.0F), 360);
-      int health = -1;
-      if (body instanceof VehicleEntity ve && ve.getMaxHealth() > 0.0F) {
-         health = Mth.clamp(Math.round(ve.getHealth() / ve.getMaxHealth() * 100.0F), 0, 100);
-      }
-
-      // Missiles locked on us: real client entities plus BVR phantoms beyond render distance.
-      String myId = player.getStringUUID();
-      String bodyId = body.getStringUUID();
-      IntOpenHashSet seen = new IntOpenHashSet();
-      IntOpenHashSet incomingIds = new IntOpenHashSet();
-      List<Blip> blips = new ArrayList<>();
-      int threats = 0;
-      double threatDist = Double.MAX_VALUE;
-      double threatBearing = 0.0;
-      List<Entity> missiles = new ArrayList<>();
-      for (Entity e : level.entitiesForRendering()) {
-         if (e instanceof MissileProjectile) {
-            missiles.add(e);
-         }
-      }
-
-      missiles.addAll(ClientSyncedEntityHandler.getSyncedWorldRenderEntities(level));
-      for (Entity e : missiles) {
-         if (!(e instanceof MissileProjectile m) || !seen.add(e.getId())) {
-            continue;
-         }
-
-         String lock = m.getTargetUUID();
-         if (lock == null || !(lock.equals(myId) || lock.equals(bodyId))) {
-            continue;
-         }
-
-         Vec3 p = ClientSyncedEntityHandler.getExtrapolatedPos(level, e);
-         double d = p.distanceTo(own);
-         threats++;
-         incomingIds.add(e.getId());
-         blips.add(new Blip(K_INCOMING, e.getDisplayName().getString(), p.x, p.z));
-         if (d < threatDist) {
-            threatDist = d;
-            threatBearing = bearing(p.x - own.x, p.z - own.z);
-         }
-      }
-
-      // Force picture from the server-side relation sync (the same lists the map draws).
-      List<Row> rows = new ArrayList<>();
-      int hostileMissiles = 0;
-      int hostileCount = 0;
-      for (Entity e : ClientSyncedEntityHandler.getSyncedHostileEntities(level)) {
-         if (e.getVehicle() != null) {
-            continue;
-         }
-
-         hostileCount++;
-         boolean missile = e instanceof MissileProjectile;
-         boolean air = !missile && Sbw.isAircraft(e);
-         if (missile) {
-            hostileMissiles++;
-         }
-
-         Vec3 p = ClientSyncedEntityHandler.getExtrapolatedPos(level, e);
-         String name = e.getDisplayName().getString();
-         rows.add(row(e.getId(), kindOf(e), name, own, p, missile ? WARN : (air ? HOSTILE_AIR : HOSTILE)));
-         if (!incomingIds.contains(e.getId())) {
-            blip(blips, missile ? K_MISSILE : (air ? K_HOSTILE_AIR : K_HOSTILE), name, p);
-         }
-      }
-
-      int friendlyCount = 0;
-      for (Entity e : ClientSyncedEntityHandler.getSyncedFriendlyEntities(level)) {
-         if (e.getVehicle() != null) {
-            continue;
-         }
-
-         friendlyCount++;
-         if (e.getId() != body.getId() && e.getId() != player.getId()) {
-            blip(blips, K_FRIENDLY, e.getDisplayName().getString(), ClientSyncedEntityHandler.getExtrapolatedPos(level, e));
-         }
-      }
-
-      int neutralCount = 0;
-      for (Entity e : ClientSyncedEntityHandler.getSyncedNeutralEntities(level)) {
-         if (e.getVehicle() != null) {
-            continue;
-         }
-
-         neutralCount++;
-         blip(blips, K_NEUTRAL, e.getDisplayName().getString(), ClientSyncedEntityHandler.getExtrapolatedPos(level, e));
-      }
-
-      for (ClientSyncedEntityHandler.ClientSyncedPlayer info : ClientSyncedEntityHandler.getSyncedPlayerInfo(level)) {
-         if (info.getOnVehicle() || info.getUuid().equals(player.getUUID())) {
-            continue;
-         }
-
-         if ("hostile".equals(info.getRelation())) {
-            hostileCount++;
-            rows.add(row(info.getEntityId(), "步兵", info.getName(), own, info.getPos(), HOSTILE));
-            blip(blips, K_HOSTILE, info.getName(), info.getPos());
-         } else if ("friendly".equals(info.getRelation())) {
-            blip(blips, K_FRIENDLY, info.getName(), info.getPos());
-         }
-      }
-
-      rows.sort(Comparator.comparingDouble(Row::dist));
-      if (rows.size() > MAX_ROWS) {
-         rows = new ArrayList<>(rows.subList(0, MAX_ROWS));
-      }
-
-      Int2DoubleOpenHashMap next = new Int2DoubleOpenHashMap();
-      for (Row r : rows) {
-         next.put(r.id(), r.dist());
-      }
-
-      LAST_DIST.clear();
-      LAST_DIST.putAll(next);
-      return new Model(vehicle, own.x, own.z, alt, agl, speed, heading, health, threats, threatDist, threatBearing, hostileCount,
-         friendlyCount, neutralCount, hostileMissiles, List.copyOf(rows), List.copyOf(blips));
+       VehicleEntity ve;
+       Entity body = player.getRootVehicle();
+       Vec3 own = body.position();
+       String vehicle = body == player ? "" : body.getDisplayName().getString();
+       int alt = Mth.floor((double) own.y);
+       int agl = -1;
+       if (level.hasChunk(Mth.floor((double) own.x) >> 4, Mth.floor((double) own.z) >> 4)) {
+           agl = Math.max(0, alt - level.getHeight(Heightmap.Types.WORLD_SURFACE, Mth.floor((double) own.x), Mth.floor((double) own.z)));
+       }
+       Vec3 v = ContactRenderer.velocityOf((Level) level, body);
+       int speed = (int) Math.round(v.length() * 20.0 * 3.6);
+       int heading = Math.floorMod(Math.round(body.getYRot() + 180.0f), 360);
+       int health = -1;
+       if (body instanceof VehicleEntity && (ve = (VehicleEntity) body).getMaxHealth() > 0.0f) {
+           health = Mth.clamp((int) Math.round(ve.getHealth() / ve.getMaxHealth() * 100.0f), (int) 0, (int) 100);
+       }
+       String myId = player.getStringUUID();
+       String bodyId = body.getStringUUID();
+       IntOpenHashSet seen = new IntOpenHashSet();
+       IntOpenHashSet incomingIds = new IntOpenHashSet();
+       ArrayList<Blip> blips = new ArrayList<Blip>();
+       int threats = 0;
+       double threatDist = Double.MAX_VALUE;
+       double threatBearing = 0.0;
+       List<Entity> missiles = com.f16addon.client.ClientMissileIndex.missiles(level);
+       for (Entity e : missiles) {
+           Object lock;
+           if (!(e instanceof MissileProjectile))
+               continue;
+           MissileProjectile m = (MissileProjectile) e;
+           if (!seen.add(e.getId()) || (lock = m.getTargetUUID()) == null || !((String) lock).equals(myId) && !((String) lock).equals(bodyId))
+               continue;
+           Vec3 p = ClientSyncedEntityHandler.getExtrapolatedPos((Level) level, (Entity) e);
+           double d = p.distanceTo(own);
+           ++threats;
+           incomingIds.add(e.getId());
+           blips.add(new Blip(5, e.getDisplayName().getString(), p.x, p.z));
+           if (!(d < threatDist))
+               continue;
+           threatDist = d;
+           threatBearing = SituationPanel.bearing(p.x - own.x, p.z - own.z);
+       }
+       ArrayList<Row> rows = new ArrayList<Row>();
+       int hostileMissiles = 0;
+       int hostileCount = 0;
+       for (Entity e : ClientSyncedEntityHandler.getSyncedHostileEntities((Level) level)) {
+           boolean air;
+           if (e.getVehicle() != null)
+               continue;
+           ++hostileCount;
+           boolean missile = e instanceof MissileProjectile;
+           boolean bl = air = !missile && Sbw.isAircraft((Entity) e);
+           if (missile) {
+               ++hostileMissiles;
+           }
+           Vec3 p = ClientSyncedEntityHandler.getExtrapolatedPos((Level) level, (Entity) e);
+           String name = e.getDisplayName().getString();
+           rows.add(SituationPanel.row(e.getId(), SituationPanel.kindOf((Entity) e), name, own, p, missile ? -50373 : (air ? -19641 : -42406)));
+           if (incomingIds.contains(e.getId()))
+               continue;
+           SituationPanel.blip(blips, missile ? 2 : (air ? 1 : 0), name, p);
+       }
+       int friendlyCount = 0;
+       for (Entity e : ClientSyncedEntityHandler.getSyncedFriendlyEntities((Level) level)) {
+           if (e.getVehicle() != null)
+               continue;
+           ++friendlyCount;
+           if (e.getId() == body.getId() || e.getId() == player.getId())
+               continue;
+           SituationPanel.blip(blips, 3, e.getDisplayName().getString(), ClientSyncedEntityHandler.getExtrapolatedPos((Level) level, (Entity) e));
+       }
+       int neutralCount = 0;
+       for (Entity e : ClientSyncedEntityHandler.getSyncedNeutralEntities((Level) level)) {
+           if (e.getVehicle() != null)
+               continue;
+           ++neutralCount;
+           SituationPanel.blip(blips, 4, e.getDisplayName().getString(), ClientSyncedEntityHandler.getExtrapolatedPos((Level) level, (Entity) e));
+       }
+       for (ClientSyncedEntityHandler.ClientSyncedPlayer info : ClientSyncedEntityHandler.getSyncedPlayerInfo((Level) level)) {
+           if (info.getOnVehicle() || info.getUuid().equals(player.getUUID()))
+               continue;
+           if ("hostile".equals(info.getRelation())) {
+               ++hostileCount;
+               rows.add(SituationPanel.row(info.getEntityId(), "\u6b65\u5175", info.getName(), own, info.getPos(), -42406));
+               SituationPanel.blip(blips, 0, info.getName(), info.getPos());
+               continue;
+           }
+           if (!"friendly".equals(info.getRelation()))
+               continue;
+           SituationPanel.blip(blips, 3, info.getName(), info.getPos());
+       }
+       rows.sort(Comparator.comparingDouble(Row::dist));
+       if (rows.size() > 12) {
+           rows = new ArrayList(rows.subList(0, 12));
+       }
+       Int2DoubleOpenHashMap next = new Int2DoubleOpenHashMap();
+       for (Row r : rows) {
+           next.put(r.id(), r.dist());
+       }
+       LAST_DIST.clear();
+       LAST_DIST.putAll((Map) next);
+       return new Model(vehicle, own.x, own.z, alt, agl, speed, heading, health, threats, threatDist, threatBearing, hostileCount, friendlyCount, neutralCount, hostileMissiles, List.copyOf(rows), List.copyOf(blips));
    }
 
    private static void blip(List<Blip> blips, int kind, String name, Vec3 p) {
@@ -636,4 +586,15 @@ public final class SituationPanel {
          default -> "目标";
       };
    }
+
+   private static ClientLevel modelWorld;
+
+   public static void reset() {
+       modelWorld = null;
+       model = null;
+       builtAt = 0;
+       LAST_DIST.clear();
+       HITS.clear();
+   }
+
 }

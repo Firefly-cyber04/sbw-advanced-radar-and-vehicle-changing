@@ -14,6 +14,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.scores.Team;
+import net.minecraft.world.entity.LivingEntity;
 
 /**
  * Shared friend-or-foe logic and contact picture for all enemy AI.
@@ -132,64 +133,34 @@ public final class Targeting {
       return Sbw.isAircraft(e) && !e.onGround();
    }
 
-   /**
-    * Builds the contact picture around {@code self}: players (merged into their vehicle), manned / hostile vehicles,
-    * and configured extra mob types. Costs O(players + vehicles) instead of an AABB query over millions of blocks.
-    */
+
    public static List<Contact> contacts(ServerLevel level, Entity self, double range) {
-      UnitTracker.Units units = UnitTracker.get(level);
-      double rangeSqr = range * range;
-      Map<Entity, Boolean> seen = new IdentityHashMap<>();
-      List<Contact> out = new ArrayList<>();
-
-      for (ServerPlayer player : level.players()) {
-         if (!isTargetablePlayer(player) || isFriendly(self, player)) {
-            continue;
-         }
-
-         Entity root = player.getRootVehicle();
-         Entity body = root != player && Sbw.isVehicle(root) ? root : player;
-         if (seen.put(body, Boolean.TRUE) != null || body == self || (body != player && isFriendlyVehicle(self, body))) {
-            continue;
-         }
-
-         double d = self.distanceToSqr(body);
-         if (d <= rangeSqr) {
-            out.add(new Contact(body, true, isAirborne(body), d));
-         }
-      }
-
-      boolean emptyOk = Config.TARGET_EMPTY_VEHICLES.get();
-      for (Entity vehicle : units.vehicles()) {
-         if (vehicle == self || seen.containsKey(vehicle) || !UnitTracker.isLive(level, vehicle) || vehicle.getVehicle() != null) {
-            continue;
-         }
-
-         double d = self.distanceToSqr(vehicle);
-         if (d > rangeSqr || isFriendlyVehicle(self, vehicle) || Sbw.isWrecked(vehicle)) {
-            continue;
-         }
-
-         if (!emptyOk && !isCrewed(vehicle)) {
-            continue;
-         }
-
-         seen.put(vehicle, Boolean.TRUE);
-         out.add(new Contact(vehicle, hasPlayer(vehicle), isAirborne(vehicle), d));
-      }
-
-      for (Entity mob : units.extra()) {
-         if (seen.containsKey(mob) || !UnitTracker.isLive(level, mob) || isFriendly(self, mob)) {
-            continue;
-         }
-
-         double d = self.distanceToSqr(mob);
-         if (d <= rangeSqr) {
-            out.add(new Contact(mob, false, isAirborne(mob), d));
-         }
-      }
-
-      return out;
+       double d;
+       UnitTracker.Units units = UnitTracker.get(level);
+       double rangeSqr = range * range;
+       IdentityHashMap<Object, Boolean> seen = new IdentityHashMap<Object, Boolean>();
+       ArrayList<Contact> out = new ArrayList<Contact>();
+       for (ServerPlayer player : level.players()) {
+           double d2;
+           Entity root;
+           Entity body;
+           if (!Targeting.isTargetablePlayer((Player) player) || Targeting.isFriendly(self, (Entity) player) || seen.put(body = (root = player.getRootVehicle()) != player && Sbw.isVehicle(root) ? root : player, Boolean.TRUE) != null || body == self || body != player && Targeting.isFriendlyVehicle(self, (Entity) body) || !((d2 = self.distanceToSqr((Entity) body)) <= rangeSqr))
+               continue;
+           out.add(new Contact((Entity) body, true, Targeting.isAirborne((Entity) body), d2));
+       }
+       boolean emptyOk = (Boolean) Config.TARGET_EMPTY_VEHICLES.get();
+       for (Entity vehicle : BattleIndex.vehicles(level, self, range)) {
+           if (vehicle == self || seen.containsKey(vehicle) || !UnitTracker.isLive(level, vehicle) || vehicle.getVehicle() != null || (d = self.distanceToSqr(vehicle)) > rangeSqr || Targeting.isFriendlyVehicle(self, vehicle) || Sbw.isWrecked(vehicle) || !emptyOk && !Targeting.isCrewed(vehicle))
+               continue;
+           seen.put(vehicle, Boolean.TRUE);
+           out.add(new Contact(vehicle, Targeting.hasPlayer(vehicle), Targeting.isAirborne(vehicle), d));
+       }
+       for (Entity mob : BattleIndex.extras(level, self, range)) {
+           if (seen.containsKey(mob) || !UnitTracker.isLive(level, mob) || Targeting.isFriendly(self, mob) || !((d = self.distanceToSqr(mob)) <= rangeSqr))
+               continue;
+           out.add(new Contact(mob, false, Targeting.isAirborne(mob), d));
+       }
+       return out;
    }
 
    /** Re-validates a remembered target without a scan. */
@@ -232,25 +203,23 @@ public final class Targeting {
 
    private static final Map<UUID, List<Entity>> IN_FLIGHT = new HashMap<>();
 
-   /** Records a missile fired by an enemy unit at {@code target}. */
+
    public static void registerShot(Entity target, Entity missile) {
-      IN_FLIGHT.computeIfAbsent(target.getUUID(), k -> new ArrayList<>(2)).add(missile);
+       IN_FLIGHT.computeIfAbsent(target.getUUID(),  k -> new ArrayList<>(2)).add(missile);
    }
 
-   /** Live enemy-force missiles currently flying at {@code target}. */
+
    public static int missilesInFlight(Entity target) {
-      List<Entity> list = IN_FLIGHT.get(target.getUUID());
-      if (list == null) {
-         return 0;
-      }
-
-      list.removeIf(m -> m.isRemoved() || !m.isAlive());
-      if (list.isEmpty()) {
-         IN_FLIGHT.remove(target.getUUID());
-         return 0;
-      }
-
-      return list.size();
+       List<Entity> list = IN_FLIGHT.get(target.getUUID());
+       if (list == null) {
+           return 0;
+       }
+       list.removeIf( m -> m.isRemoved() || !m.isAlive() || !target.getStringUUID().equals(Sbw.targetUuid(m)));
+       if (list.isEmpty()) {
+           IN_FLIGHT.remove(target.getUUID());
+           return 0;
+       }
+       return list.size();
    }
 
    /** Drops board entries whose missiles are all gone (called once a second). */
@@ -267,5 +236,10 @@ public final class Targeting {
 
    static void clearBoard() {
       IN_FLIGHT.clear();
+   }
+
+   static void forget(ServerLevel level) {
+       IN_FLIGHT.values().forEach( list -> list.removeIf( m -> m.level() == level));
+       IN_FLIGHT.values().removeIf(List::isEmpty);
    }
 }

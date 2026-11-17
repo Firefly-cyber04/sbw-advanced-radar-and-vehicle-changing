@@ -12,6 +12,10 @@ import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraft.world.level.Level;
+import net.minecraftforge.common.extensions.IForgeEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Enemy F-16 autopilot.
@@ -77,56 +81,11 @@ public final class F16FlightAI {
       return Sbw.isWrecked(self);
    }
 
-   public static void tick(ServerLevel level, Entity self) {
-      CompoundTag data = self.getPersistentData();
-      initHome(self, data);
-      if (isWrecked(self)) {
-         if (!data.getBoolean("f16_wreck_stopped")) {
-            data.putBoolean("f16_wreck_stopped", true);
-            data.putBoolean("f16_airborne", false);
-            data.putString("f16_locked_target", "");
-            data.putString("f16_target", "");
-            self.setDeltaMovement(Vec3.ZERO);
-         }
-
-         return;
-      }
-
-      if (self.onGround() && data.getBoolean("f16_airborne")) {
-         data.putBoolean("f16_airborne", false);
-         data.putDouble("f16_climb_speed", 0.0);
-      }
-
-      if (!data.getBoolean("f16_airborne")) {
-         takeOff(level, self, data);
-         return;
-      }
-
-      maybeReleaseDecoy(level, self, data);
-      if (Config.F16_EVASIVE.get()) {
-         Entity missile = ThreatIndex.nearestClosingAam(level, self);
-         double range = Config.F16_EVASION_RANGE.get();
-         if (missile != null && missile.distanceToSqr(self) <= range * range) {
-            evade(level, self, data, missile);
-            return;
-         }
-      }
-
-      String mode = data.getString("f16_mode");
-      if (mode.equals("patrol") || mode.equals("return") || isLeashed(self, data)) {
-         data.putString("f16_target", "");
-         data.putInt("f16_run_phase", RUN_INGRESS);
-         patrol(level, self, data);
-         return;
-      }
-
-      Entity target = resolveTarget(level, self, data);
-      if (target != null) {
-         combat(level, self, data, target);
-      } else {
-         data.putInt("f16_run_phase", RUN_INGRESS);
-         patrol(level, self, data);
-      }
+   public static void tick(ServerLevel serverLevel, Entity entity) {
+       branch = "none";
+       F16FlightAI.tickFlight(serverLevel, entity);
+       if (Config.DEBUG_AI.get())
+           F16FlightAI.logState(serverLevel, entity);
    }
 
    private static void initHome(Entity self, CompoundTag data) {
@@ -272,30 +231,28 @@ public final class F16FlightAI {
       self.hasImpulse = true;
    }
 
-   private static void patrol(ServerLevel level, Entity self, CompoundTag data) {
-      Vec3 home = home(data);
-      float angle = data.getFloat("f16_orbit_angle") + 0.034F;
-      if (angle > (float) (Math.PI * 2)) {
-         angle -= (float) (Math.PI * 2);
-      }
-
-      data.putFloat("f16_orbit_angle", angle);
-      double orbitX = home.x + Math.cos(angle) * PATROL_RADIUS;
-      double orbitZ = home.z + Math.sin(angle) * PATROL_RADIUS;
-      int ground = ground(level, data, orbitX, orbitZ);
-      double targetY = Math.max(ground + clearance() + 5.0, home.y + 50.0);
-      Vec3 radial = new Vec3(orbitX, targetY, orbitZ).subtract(self.position());
-      Vec3 tangent = new Vec3(-Math.sin(angle), 0.0, Math.cos(angle));
-      Vec3 desired;
-      if (radial.lengthSqr() > 1.0) {
-         Vec3 radialDir = radial.normalize();
-         desired = radial.length() > 170.0 ? radialDir : tangent.scale(0.78).add(radialDir.scale(0.42));
-      } else {
-         desired = tangent;
-      }
-
-      desired = desired.add(0.0, altitudeCorrection(self.getY(), targetY, 0.06), 0.0);
-      steer(level, self, data, desired, PATROL_SPEED, 2.2F, 1.4F, clearance());
+   private static void patrol(ServerLevel serverLevel, Entity entity, CompoundTag compoundTag) {
+       Vec3 vec3;
+       Vec3 vec32 = F16FlightAI.home(compoundTag);
+       float f = compoundTag.getFloat("f16_orbit_angle") + 0.034f;
+       if (f > (float) Math.PI * 2) {
+           f -= (float) Math.PI * 2;
+       }
+       compoundTag.putFloat("f16_orbit_angle", f);
+       double d = vec32.x + Math.cos(f) * Math.min(100.0, Config.SUPPLY_RADIUS.get() * 0.65);
+       double d2 = vec32.z + Math.sin(f) * Math.min(100.0, Config.SUPPLY_RADIUS.get() * 0.65);
+       int n = F16FlightAI.ground(serverLevel, compoundTag, d, d2);
+       double d3 = Math.max((double) n + F16FlightAI.clearance() + 5.0, vec32.y + 50.0);
+       Vec3 vec33 = new Vec3(d, d3, d2).subtract(entity.position());
+       Vec3 vec34 = new Vec3(-Math.sin(f), 0.0, Math.cos(f));
+       if (vec33.lengthSqr() > 1.0) {
+           Vec3 vec35 = vec33.normalize();
+           vec3 = vec33.length() > 170.0 ? vec35 : vec34.scale(0.78).add(vec35.scale(0.42));
+       } else {
+           vec3 = vec34;
+       }
+       vec3 = vec3.add(0.0, F16FlightAI.altitudeCorrection(entity.getY(), d3, 0.06), 0.0);
+       F16FlightAI.steer(serverLevel, entity, compoundTag, vec3, 3.4, 2.2f, 1.4f, F16FlightAI.clearance());
    }
 
    /** Beam the missile: fly perpendicular to its line of sight (kills its closure / doppler), low and fast. */
@@ -472,24 +429,20 @@ public final class F16FlightAI {
       return Mth.clamp((targetY - currentY) * gain, -0.28, 0.28);
    }
 
-   /** Pushes the commanded direction away from other enemy jets closer than {@link #SEPARATION}. */
+
    private static Vec3 deconflict(ServerLevel level, Entity self, Vec3 desired) {
-      Vec3 push = Vec3.ZERO;
-      double sepSqr = SEPARATION * SEPARATION;
-      for (Entity other : UnitTracker.get(level).f16()) {
-         if (other == self || other.isRemoved()) {
-            continue;
-         }
-
-         Vec3 away = self.position().subtract(other.position());
-         double d2 = away.lengthSqr();
-         if (d2 < sepSqr && d2 > 1.0E-4) {
-            double d = Math.sqrt(d2);
-            push = push.add(away.scale((SEPARATION - d) / (SEPARATION * d)));
-         }
-      }
-
-      return push == Vec3.ZERO ? desired : desired.add(push.scale(0.8)).normalize();
+       Vec3 correction = Vec3.ZERO;
+       for (Entity other : BattleIndex.vehicles(level, self, SEPARATION + 8.0)) {
+           if (other == self || other.isRemoved() || !other.getTags().contains(UnitTracker.TAG_F16))
+               continue;
+           Vec3 delta = self.position().subtract(other.position());
+           double distanceSquared = delta.lengthSqr();
+           if (distanceSquared >= SEPARATION * SEPARATION || distanceSquared <= 0.0001)
+               continue;
+           double distance = Math.sqrt(distanceSquared);
+           correction = correction.add(delta.scale((SEPARATION - distance) / (SEPARATION * distance)));
+       }
+       return correction.lengthSqr() < 0.000001 ? desired : desired.add(correction.scale(0.8)).normalize();
    }
 
    /**
@@ -698,71 +651,92 @@ public final class F16FlightAI {
    // Weapons
    // ----------------------------------------------------------------------------------------------------------------
 
-   private static void fire(ServerLevel level, Entity self, CompoundTag data, Entity target, double distance, boolean air) {
-      tickCooldown(data, "f16_cd_cannon");
-      tickCooldown(data, "f16_cd_aim9");
-      tickCooldown(data, "f16_cd_aim120");
-      tickCooldown(data, "f16_cd_agm");
-      tickCooldown(data, "f16_cd_bomb");
-      int reaction = data.getInt("f16_react_cd");
-      if (reaction > 0) {
-         data.putInt("f16_react_cd", reaction - 1);
-         return;
-      }
-
-      Vec3 toTarget = target.position().subtract(self.position());
-      double facing = toTarget.lengthSqr() < 0.01 ? 1.0 : self.getLookAngle().normalize().dot(toTarget.normalize());
-      boolean roughlyForward = facing > 0.35;
-      boolean gunAligned = facing > 0.82;
-      int maxMissiles = Config.F16_MAX_MISSILES_PER_TARGET.get();
-      boolean missileSlot = Targeting.missilesInFlight(target) < maxMissiles;
-
-      String weapon = null;
-      String cooldownKey = null;
-      int cooldown = 0;
-      double speed = 0.0;
-      boolean guided = false;
-      boolean bomb = false;
-      if (air) {
-         if (distance <= 95.0 && gunAligned && data.getInt("f16_cd_cannon") <= 0) {
-            weapon = CANNON; cooldownKey = "f16_cd_cannon"; cooldown = 4; speed = GUN_SPEED;
-         } else if (missileSlot && distance <= 160.0 && roughlyForward && data.getInt("f16_cd_aim9") <= 0) {
-            weapon = AIM9; cooldownKey = "f16_cd_aim9"; cooldown = 60; speed = 0.75; guided = true;
-         } else if (missileSlot && distance <= 500.0 && roughlyForward && data.getInt("f16_cd_aim120") <= 0) {
-            weapon = AIM120; cooldownKey = "f16_cd_aim120"; cooldown = 100; speed = 1.0; guided = true;
-         }
-      } else if (self.getY() > target.getY() + 30.0 && distance < 75.0 && data.getInt("f16_cd_bomb") <= 0) {
-         weapon = BOMB; cooldownKey = "f16_cd_bomb"; cooldown = 100; speed = 0.6; bomb = true;
-      } else if (missileSlot && distance <= 220.0 && roughlyForward && data.getInt("f16_cd_agm") <= 0) {
-         weapon = AGM; cooldownKey = "f16_cd_agm"; cooldown = 80; speed = 1.8; guided = true;
-      } else if (distance <= 125.0 && gunAligned && data.getInt("f16_cd_cannon") <= 0) {
-         weapon = CANNON; cooldownKey = "f16_cd_cannon"; cooldown = 4; speed = GUN_SPEED;
-      }
-
-      if (weapon == null) {
-         return;
-      }
-
-      Vec3 aim = guided ? WorldQueries.center(target) : leadPoint(self, data, target, speed);
-      Vec3 muzzle = muzzle(self);
-      // Bombs are dropped, not aimed through terrain; everything else needs a clear line (one raycast per shot).
-      if (data.getInt("f16_los_cd") > 0) {
-         tickCooldown(data, "f16_los_cd");
-         return;
-      }
-
-      if (!bomb && !WorldQueries.lineOfSight(level, muzzle, WorldQueries.center(target), self)) {
-         data.putInt("f16_los_cd", 5);
-         return;
-      }
-
-      Entity projectile = fireProjectile(level, self, weapon, muzzle, aim, speed, bomb, guided ? target : null);
-      if (projectile != null) {
-         data.putInt(cooldownKey, cooldown);
-         if (guided) {
-            Targeting.registerShot(target, projectile);
-         }
-      }
+   private static void fire(ServerLevel serverLevel, Entity entity, CompoundTag compoundTag, Entity entity2, double d, boolean bl) {
+       F16FlightAI.tickCooldown(compoundTag, "f16_cd_cannon");
+       F16FlightAI.tickCooldown(compoundTag, "f16_cd_aim9");
+       F16FlightAI.tickCooldown(compoundTag, "f16_cd_aim120");
+       F16FlightAI.tickCooldown(compoundTag, "f16_cd_agm");
+       F16FlightAI.tickCooldown(compoundTag, "f16_cd_bomb");
+       int n = compoundTag.getInt("f16_react_cd");
+       if (n > 0) {
+           compoundTag.putInt("f16_react_cd", n - 1);
+           return;
+       }
+       Vec3 vec3 = entity2.position().subtract(entity.position());
+       double d2 = vec3.lengthSqr() < 0.01 ? 1.0 : entity.getLookAngle().normalize().dot(vec3.normalize());
+       boolean bl2 = d2 > 0.35;
+       boolean bl3 = d2 > 0.82;
+       int n2 = (Integer) Config.F16_MAX_MISSILES_PER_TARGET.get();
+       boolean bl4 = Targeting.missilesInFlight(entity2) < n2;
+       String string = null;
+       String string2 = null;
+       int n3 = 0;
+       double d3 = 0.0;
+       boolean bl5 = false;
+       boolean bl6 = false;
+       if (bl) {
+           if (d <= 95.0 && bl3 && compoundTag.getInt("f16_cd_cannon") <= 0 && SupplySystem.canFire(entity, CANNON)) {
+               string = CANNON;
+               string2 = "f16_cd_cannon";
+               n3 = 4;
+               d3 = 8.0;
+           } else if (bl4 && d <= 160.0 && bl2 && compoundTag.getInt("f16_cd_aim9") <= 0 && SupplySystem.canFire(entity, AIM9)) {
+               string = AIM9;
+               string2 = "f16_cd_aim9";
+               n3 = 60;
+               d3 = 0.75;
+               bl5 = true;
+           } else if (bl4 && d <= 500.0 && bl2 && compoundTag.getInt("f16_cd_aim120") <= 0 && SupplySystem.canFire(entity, AIM120)) {
+               string = AIM120;
+               string2 = "f16_cd_aim120";
+               n3 = 100;
+               d3 = 1.0;
+               bl5 = true;
+           }
+       } else if (entity.getY() > entity2.getY() + 30.0 && d < 75.0 && compoundTag.getInt("f16_cd_bomb") <= 0 && SupplySystem.canFire(entity, BOMB)) {
+           string = BOMB;
+           string2 = "f16_cd_bomb";
+           n3 = 100;
+           d3 = 0.6;
+           bl6 = true;
+       } else if (bl4 && d <= 220.0 && bl2 && compoundTag.getInt("f16_cd_agm") <= 0 && SupplySystem.canFire(entity, AGM)) {
+           string = AGM;
+           string2 = "f16_cd_agm";
+           n3 = 80;
+           d3 = 1.8;
+           bl5 = true;
+       } else if (d <= 125.0 && bl3 && compoundTag.getInt("f16_cd_cannon") <= 0 && SupplySystem.canFire(entity, CANNON)) {
+           string = CANNON;
+           string2 = "f16_cd_cannon";
+           n3 = 4;
+           d3 = 8.0;
+       }
+       if (string == null || !BattleBudget.canFire(serverLevel, false)) {
+           return;
+       }
+       Vec3 vec32 = bl5 ? WorldQueries.center(entity2) : F16FlightAI.leadPoint(entity, compoundTag, entity2, d3);
+       Vec3 vec33 = F16FlightAI.muzzle(entity);
+       if (compoundTag.getInt("f16_los_cd") > 0) {
+           F16FlightAI.tickCooldown(compoundTag, "f16_los_cd");
+           return;
+       }
+       if (!bl6 && !WorldQueries.lineOfSight(serverLevel, vec33, WorldQueries.center(entity2), entity)) {
+           compoundTag.putInt("f16_los_cd", 5);
+           return;
+       }
+       Entity entity3 = F16FlightAI.fireProjectile(serverLevel, entity, string, vec33, vec32, d3, bl6, (Entity) (bl5 ? entity2 : null));
+       if (entity3 != null) {
+           SupplySystem.consume(entity, string);
+           if (string.equals(CANNON)) {
+               int shots = compoundTag.getInt("f16_gun_burst_count") + 1;
+               n3 = com.f16addon.core.ThreatMath.burstCooldown(shots, Config.F16_GUN_BURST_SIZE.get(), n3, Config.F16_GUN_BURST_PAUSE.get());
+               compoundTag.putInt("f16_gun_burst_count", shots >= Config.F16_GUN_BURST_SIZE.get() ? 0 : shots);
+           }
+           compoundTag.putInt(string2, n3);
+           if (bl5) {
+               Targeting.registerShot(entity2, entity3);
+           }
+       }
    }
 
    private static Vec3 muzzle(Entity self) {
@@ -786,37 +760,44 @@ public final class F16FlightAI {
       return rl == null ? null : ForgeRegistries.ENTITY_TYPES.getValue(rl);
    }
 
-   private static Entity fireProjectile(ServerLevel level, Entity self, String entityId, Vec3 start, Vec3 target, double speed, boolean bomb, Entity lockTarget) {
-      EntityType<?> type = type(entityId);
-      if (type == null) {
-         return null;
-      }
-
-      Vec3 dir = target.subtract(start);
-      if (dir.lengthSqr() < 0.01) {
-         return null;
-      }
-
-      Entity projectile = type.create(level);
-      if (projectile == null) {
-         return null;
-      }
-
-      dir = dir.normalize();
-      projectile.moveTo(start.x, start.y, start.z, self.getYRot(), self.getXRot());
-      if (projectile instanceof Projectile p) {
-         p.setOwner(self);
-      }
-
-      projectile.setDeltaMovement(bomb ? dir.scale(speed).add(0.0, -0.12, 0.0) : dir.scale(speed));
-      if (lockTarget != null) {
-         Sbw.lockMissile(projectile, lockTarget, WorldQueries.center(lockTarget));
-         if (entityId.equals(AIM120) || entityId.equals(AIM9)) {
-            projectile.addTag("f16_aam");
-         }
-      }
-
-      return level.addFreshEntity(projectile) ? projectile : null;
+   private static Entity fireProjectile(ServerLevel serverLevel, Entity entity, String string, Vec3 vec3, Vec3 vec32, double d, boolean bl, Entity entity2) {
+       EntityType<?> entityType = F16FlightAI.type(string);
+       if (entityType == null) {
+           return null;
+       }
+       Vec3 vec33 = vec32.subtract(vec3);
+       if (vec33.lengthSqr() < 0.01) {
+           return null;
+       }
+       Entity entity3 = entityType.create((Level) serverLevel);
+       if (entity3 == null) {
+           return null;
+       }
+       vec33 = vec33.normalize();
+       entity3.moveTo(vec3.x, vec3.y, vec3.z, entity.getYRot(), entity.getXRot());
+       if (entity3 instanceof Projectile) {
+           Projectile projectile = (Projectile) entity3;
+           projectile.setOwner(entity);
+       }
+       entity3.setDeltaMovement(bl ? vec33.scale(d).add(0.0, -0.12, 0.0) : vec33.scale(d));
+       if (entity2 != null) {
+           Sbw.lockMissile(entity3, entity2, WorldQueries.center(entity2));
+           if (string.equals(AIM120) || string.equals(AIM9)) {
+               entity3.addTag("f16_aam");
+           }
+       }
+       if (string.equals(AIM9)) {
+           Sbw.call(entity3, Sbw.SET_DAMAGE, Config.F16_IR_DAMAGE.get().floatValue());
+           Sbw.call(entity3, Sbw.SET_EXPLOSION_DAMAGE, Config.F16_IR_EXPLOSION_DAMAGE.get().floatValue());
+           Sbw.call(entity3, Sbw.SET_EXPLOSION_RADIUS, Config.F16_IR_EXPLOSION_RADIUS.get().floatValue());
+       } else if (string.equals(CANNON)) {
+           Sbw.call(entity3, Sbw.SET_EXPLOSION_RADIUS, Config.F16_CANNON_EXPLOSION_RADIUS.get().floatValue());
+       }
+       BattleBudget.prepare(entity3);
+       if (!serverLevel.addFreshEntity(entity3))
+           return null;
+       BattleBudget.fired(serverLevel);
+       return entity3;
    }
 
    // ----------------------------------------------------------------------------------------------------------------
@@ -857,5 +838,255 @@ public final class F16FlightAI {
       if (value > 0) {
          data.putInt(key, value - 1);
       }
+   }
+
+   private static final Logger LOG = LoggerFactory.getLogger((String) "f16addon");
+
+   private static String branch = "none";
+
+   private static final double RETURN_SPEED = 3.4;
+
+   private static final float RETURN_TURN_RATE = 4.5f;
+
+   private static final float RETURN_PITCH_RATE = 2.0f;
+
+   private static final double GEAR_ANGLE = 85.0;
+
+   private static final int LOG_INTERVAL = 20;
+
+   private static void tickFlight(ServerLevel serverLevel, Entity entity) {
+       Object object;
+       CompoundTag compoundTag = ((IForgeEntity) entity).getPersistentData();
+       F16FlightAI.initHome(entity, compoundTag);
+       F16FlightAI.updateGear(serverLevel, entity, compoundTag);
+       if (F16FlightAI.isWrecked(entity)) {
+           branch = "wreck";
+           if (!compoundTag.getBoolean("f16_wreck_stopped")) {
+               compoundTag.putBoolean("f16_wreck_stopped", true);
+               compoundTag.putBoolean("f16_airborne", false);
+               compoundTag.putString("f16_locked_target", "");
+               compoundTag.putString("f16_target", "");
+               entity.setDeltaMovement(Vec3.ZERO);
+           }
+           return;
+       }
+       boolean servicing = SupplySystem.update(serverLevel, entity);
+       boolean wounded = SupplySystem.wounded(entity);
+       if ((servicing || wounded) && compoundTag.getBoolean("f16_airborne")) {
+           branch = wounded ? "withdraw" : "resupply";
+           compoundTag.putString("f16_target", "");
+           compoundTag.putString("f16_locked_target", "");
+           F16FlightAI.maybeReleaseDecoy(serverLevel, entity, compoundTag);
+           F16FlightAI.returnHome(serverLevel, entity, compoundTag);
+           return;
+       }
+       F16FlightAI.recoverOutsideLeash(serverLevel, entity, compoundTag);
+       if (F16FlightAI.isLeashed(entity, compoundTag)) {
+           branch = "leash";
+           compoundTag.putBoolean("f16_airborne", true);
+           compoundTag.putString("f16_locked_target", "");
+           compoundTag.putString("f16_target", "");
+           compoundTag.putInt("f16_run_phase", 0);
+           F16FlightAI.returnHome(serverLevel, entity, compoundTag);
+           return;
+       }
+       if (entity.onGround() && compoundTag.getBoolean("f16_airborne")) {
+           compoundTag.putBoolean("f16_airborne", false);
+           compoundTag.putDouble("f16_climb_speed", 0.0);
+       }
+       if (!compoundTag.getBoolean("f16_airborne")) {
+           branch = "takeoff";
+           F16FlightAI.takeOff(serverLevel, entity, compoundTag);
+           return;
+       }
+       F16FlightAI.maybeReleaseDecoy(serverLevel, entity, compoundTag);
+       if (((Boolean) Config.F16_EVASIVE.get()).booleanValue()) {
+           Entity incomingMissile = ThreatIndex.nearestClosingAam(serverLevel, entity);
+           double d = (Double) Config.F16_EVASION_RANGE.get();
+           if (incomingMissile != null && incomingMissile.distanceToSqr(entity) <= d * d) {
+               branch = "evade";
+               F16FlightAI.evade(serverLevel, entity, compoundTag, incomingMissile);
+               return;
+           }
+       }
+       if ((object = compoundTag.getString("f16_mode")).equals("patrol") || ((String) object).equals("return") || F16FlightAI.isLeashed(entity, compoundTag)) {
+           compoundTag.putString("f16_target", "");
+           compoundTag.putInt("f16_run_phase", 0);
+           String string = branch = ((String) object).equals("return") ? "return" : "patrol";
+           if (((String) object).equals("return")) {
+               F16FlightAI.returnHome(serverLevel, entity, compoundTag);
+           } else {
+               F16FlightAI.patrol(serverLevel, entity, compoundTag);
+           }
+           return;
+       }
+       Entity entity2 = F16FlightAI.resolveTarget(serverLevel, entity, compoundTag);
+       if (entity2 != null) {
+           branch = "combat";
+           F16FlightAI.combat(serverLevel, entity, compoundTag, entity2);
+       } else {
+           branch = "patrol";
+           compoundTag.putInt("f16_run_phase", 0);
+           F16FlightAI.patrol(serverLevel, entity, compoundTag);
+       }
+   }
+
+   private static void returnHome(ServerLevel serverLevel, Entity entity, CompoundTag compoundTag) {
+       Vec3 vec3 = F16FlightAI.home(compoundTag);
+       Vec3 vec32 = vec3.subtract(entity.position());
+       double d = vec32.length();
+       if (d < 220.0) {
+           F16FlightAI.patrol(serverLevel, entity, compoundTag);
+           return;
+       }
+       Vec3 vec33 = vec32.normalize();
+       double d2 = Math.max((double) F16FlightAI.ground(serverLevel, compoundTag, entity.getX(), entity.getZ()) + F16FlightAI.clearance() + 5.0, vec3.y + 50.0);
+       vec33 = vec33.add(0.0, F16FlightAI.altitudeCorrection(entity.getY(), d2, 0.05), 0.0);
+       F16FlightAI.steer(serverLevel, entity, compoundTag, vec33, 3.4, 4.5f, 2.0f, F16FlightAI.clearance());
+   }
+
+   private static double leashRadius() {
+       return Math.max(128.0, (Double) Config.F16_LEASH_RADIUS.get());
+   }
+
+   private static double leashMargin() {
+       double d = 43.29014452099553;
+       return Math.max(120.0, Math.PI * d + 20.0);
+   }
+
+   private static double leashReturnRadius() {
+       return Math.max(64.0, F16FlightAI.leashRadius() - F16FlightAI.leashMargin());
+   }
+
+   private static Vec3 clampToLeash(CompoundTag compoundTag, Vec3 vec3, Vec3 vec32) {
+       Vec3 vec33 = F16FlightAI.home(compoundTag);
+       double d = F16FlightAI.leashRadius();
+       if (F16FlightAI.horizontalDistSqr(vec3, vec33) > d * d) {
+           return vec32;
+       }
+       return F16FlightAI.clampToCircle(compoundTag, vec32);
+   }
+
+   private static Vec3 clampToCircle(CompoundTag compoundTag, Vec3 vec3) {
+       Vec3 vec32 = F16FlightAI.home(compoundTag);
+       double d = F16FlightAI.leashRadius();
+       double d2 = F16FlightAI.horizontalDistSqr(vec3, vec32);
+       if (d2 <= d * d || d2 < 1.0E-6) {
+           return vec3;
+       }
+       double d3 = vec3.x - vec32.x;
+       double d4 = vec3.z - vec32.z;
+       double d5 = Math.sqrt(d3 * d3 + d4 * d4);
+       double d6 = d / d5;
+       return new Vec3(vec32.x + d3 * d6, vec3.y, vec32.z + d4 * d6);
+   }
+
+   private static Vec3 flightBase(Entity entity, CompoundTag compoundTag) {
+       Vec3 vec3 = entity.position();
+       if (!compoundTag.contains("f16_bx")) {
+           return vec3;
+       }
+       Vec3 vec32 = new Vec3(compoundTag.getDouble("f16_bx"), compoundTag.getDouble("f16_by"), compoundTag.getDouble("f16_bz"));
+       if (vec3.subtract(vec32).length() > 24.0) {
+           return vec3;
+       }
+       return vec32;
+   }
+
+   private static void storeFlightState(CompoundTag compoundTag, Vec3 vec3, Vec3 vec32) {
+       compoundTag.putDouble("f16_bx", vec3.x);
+       compoundTag.putDouble("f16_by", vec3.y);
+       compoundTag.putDouble("f16_bz", vec3.z);
+       compoundTag.putDouble("f16_vx", vec32.x);
+       compoundTag.putDouble("f16_vy", vec32.y);
+       compoundTag.putDouble("f16_vz", vec32.z);
+   }
+
+   private static boolean recoverOutsideLeash(ServerLevel serverLevel, Entity entity, CompoundTag compoundTag) {
+       if (F16FlightAI.combatOverflow(entity, compoundTag)) {
+           return false;
+       }
+       Vec3 vec3 = F16FlightAI.home(compoundTag);
+       double d = F16FlightAI.leashRadius();
+       Vec3 vec32 = entity.position();
+       double d2 = F16FlightAI.horizontalDistSqr(vec32, vec3);
+       if (d2 <= d * d) {
+           compoundTag.putBoolean("f16_outside_logged", false);
+           return false;
+       }
+       double d3 = Math.sqrt(d2);
+       Vec3 vec33 = new Vec3(vec32.x - vec3.x, 0.0, vec32.z - vec3.z);
+       if (d3 < 1.0E-6) {
+           vec33 = new Vec3(1.0, 0.0, 0.0);
+       }
+       vec33 = vec33.normalize();
+       Vec3 vec34 = new Vec3(vec3.x + vec33.x * d, vec32.y, vec3.z + vec33.z * d);
+       if (!WorldQueries.isEntityTicking(serverLevel, vec34.x, vec34.y, vec34.z)) {
+           entity.setDeltaMovement(Vec3.ZERO);
+           if (!compoundTag.getBoolean("f16_outside_logged")) {
+               compoundTag.putBoolean("f16_outside_logged", true);
+               LOG.info("[f16addon] F-16 {} is {} blocks outside its leash circle and the home area is not loaded, it stops here", (Object) entity.getId(), (Object) Math.round(d3));
+           }
+           return true;
+       }
+       Vec3 vec35 = F16FlightAI.horizontal(vec3.subtract(vec34)).normalize();
+       entity.setYRot(F16FlightAI.yawOf(vec35));
+       entity.yRotO = entity.getYRot();
+       entity.setPos(vec34.x, vec34.y, vec34.z);
+       entity.setDeltaMovement(vec35.scale(3.4));
+       entity.hasImpulse = true;
+       F16FlightAI.storeFlightState(compoundTag, vec34, vec35.scale(3.4));
+       if (!compoundTag.getBoolean("f16_outside_logged")) {
+           compoundTag.putBoolean("f16_outside_logged", true);
+           LOG.info("[f16addon] F-16 {} was {} blocks outside its leash circle, it is put back on the border and flies home", (Object) entity.getId(), (Object) Math.round(d3));
+       }
+       return true;
+   }
+
+   private static void logState(ServerLevel serverLevel, Entity entity) {
+       if ((serverLevel.getGameTime() + entity.getId()) % 100L != 0L) {
+           return;
+       }
+       CompoundTag compoundTag = ((IForgeEntity) entity).getPersistentData();
+       double d = Math.sqrt(F16FlightAI.horizontalDistSqr(entity.position(), F16FlightAI.home(compoundTag)));
+       LOG.info("[f16addon] F-16 {} branch={} dist={} yaw={} speed={} airborne={} mode={} target={} gear={}", new Object[] { entity.getId(), branch, Math.round(d), Math.round(entity.getYRot()), compoundTag.getDouble("f16_speed"), compoundTag.getBoolean("f16_airborne"), compoundTag.getString("f16_mode"), compoundTag.getString("f16_target"), compoundTag.getBoolean("f16_gear_up") });
+   }
+
+   private static boolean combatOverflow(Entity entity, CompoundTag compoundTag) {
+       if (!((Boolean) Config.F16_COMBAT_CAN_LEAVE_LEASH.get()).booleanValue()) {
+           return false;
+       }
+       if (entity.onGround()) {
+           return false;
+       }
+       if (!compoundTag.getString("f16_target").isEmpty()) {
+           return true;
+       }
+       return !compoundTag.getString("f16_locked_target").isEmpty();
+   }
+
+   private static void updateGear(ServerLevel serverLevel, Entity entity, CompoundTag compoundTag) {
+       boolean bl;
+       boolean bl2 = bl = !F16FlightAI.isWrecked(entity) && !entity.onGround();
+       if (bl) {
+           bl = compoundTag.getBoolean("f16_airborne") || entity.getY() > (double) F16FlightAI.ground(serverLevel, compoundTag, entity.getX(), entity.getZ()) + 5.0;
+       }
+       float f = compoundTag.getFloat("f16_gear_rot");
+       float f2 = bl ? 1.0f : 0.0f;
+       float f3 = f < f2 ? Math.min(f + 0.05f, f2) : Math.max(f - 0.05f, f2);
+       compoundTag.putFloat("f16_gear_rot", f3);
+       compoundTag.putBoolean("f16_gear_up", f2 > 0.5f);
+       Sbw.call(entity, Sbw.SET_GEAR_UP, f2 > 0.5f);
+       Sbw.call(entity, Sbw.SET_SYNCED_GEAR_ROT, Float.valueOf(f3));
+       Sbw.call(entity, Sbw.SET_GEAR_ROT, Float.valueOf((float) ((double) f3 * 85.0)));
+   }
+
+   private static float rollOf(Entity entity) {
+       Object object = Sbw.call(entity, Sbw.GET_ROLL, new Object[0]);
+       if (object instanceof Number) {
+           Number number = (Number) object;
+           return number.floatValue();
+       }
+       return 0.0f;
    }
 }

@@ -86,3 +86,43 @@
 	#everything friendly. Default false = only projectiles that threaten the SAM or a friendly unit.
 	engageNonThreatProjectiles = false
 
+# 1.3.0 combat, supply and workload controls
+[combatTuning]
+f16IRDamage = 260
+f16IRExplosionDamage = 160
+f16IRExplosionRadius = 6.0
+f16CannonExplosionRadius = 1.5
+aiProjectileChunkLoading = false
+samMissileLifetime = 400
+debugAI = false
+aiShotsPerTick = 32
+interceptReservedShots = 8
+maxAIProjectiles = 512
+cruiseMaxLifetime = 2400
+manageExternalProjectiles = false
+groundNativeWeapons = false
+bmptBurstSize = 6
+bmptShotInterval = 6
+bmptBurstPause = 40
+tankReloadTicks = 50
+f16GunBurstSize = 12
+f16GunBurstPause = 40
+bmptExplosionRadius = 2.5
+tankExplosionRadius = 6.0
+preserveTerrain = true
+finiteAmmo = true
+bmptAmmo = 120
+tankAmmo = 18
+samAmmo = 6
+f16CannonAmmo = 240
+f16IRAmmo = 4
+f16RadarAmmo = 4
+f16AGMAmmo = 4
+f16BombAmmo = 4
+supplyWaitTicks = 200
+supplyRadius = 128.0
+f16InflightEnergyRefill = false
+retreatHealthFraction = 0.3
+samInterceptSmallShells = false
+mapQueueScanLimit = 512
+mapDiskMaxMiB = 32

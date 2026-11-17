@@ -11,6 +11,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraft.world.level.Level;
 
 /**
  * Stationary Wasp (AKM) SAM.
@@ -47,55 +48,48 @@ public final class SamUnitAI {
    }
 
    public static void tick(ServerLevel level, Entity self) {
-      CompoundTag data = self.getPersistentData();
-      if (Sbw.isWrecked(self)) {
-         data.putString("sam_target", "");
-         return;
-      }
-
-      if (!data.getBoolean("sam_ai_cleared")) {
-         // The vehicle's own weapon AI must never pick targets behind our filters.
-         Sbw.call(self, Sbw.SET_AI_TURRET_TARGET, "");
-         Sbw.call(self, Sbw.SET_AI_PASSENGER_TARGET, "");
-         data.putBoolean("sam_ai_cleared", true);
-      }
-
-      int fireCd = data.getInt("sam_fire_cd");
-      if (fireCd > 0) {
-         data.putInt("sam_fire_cd", fireCd - 1);
-      }
-
-      Entity target = resolveTarget(level, self, data);
-      if (target == null) {
-         return;
-      }
-
-      Vec3 aim = WorldQueries.center(target).add(target.getDeltaMovement().scale(8.0));
-      Sbw.call(self, Sbw.TURRET_AIM, aim);
-      Sbw.call(self, Sbw.ADJUST_TURRET);
-      if (data.getInt("sam_fire_cd") > 0 || saturated(target)) {
-         return;
-      }
-
-      double range = rangeFor(target);
-      if (self.distanceToSqr(target) > range * range || WorldQueries.heightAboveGround(level, target) < MIN_TARGET_HEIGHT) {
-         return;
-      }
-
-      if (!WorldQueries.lineOfSight(level, launchPos(self), aim, self)) {
-         int blind = data.getInt("sam_blind") + 1;
-         data.putInt("sam_blind", blind);
-         data.putInt("sam_fire_cd", 2);
-         if (blind >= BLIND_LIMIT) {
-            data.putString("sam_target", "");
-            data.putInt("sam_blind", 0);
-         }
-
-         return;
-      }
-
-      data.putInt("sam_blind", 0);
-      fire(level, self, data, target, aim);
+       Entity target;
+       int fireCd;
+       CompoundTag data = self.getPersistentData();
+       if (Sbw.isWrecked(self)) {
+           data.putString("sam_target", "");
+           return;
+       }
+       if (SupplySystem.update(level, self) || SupplySystem.wounded(self))
+           return;
+       if (!data.getBoolean("sam_ai_cleared")) {
+           Sbw.call(self, Sbw.SET_AI_TURRET_TARGET, "");
+           Sbw.call(self, Sbw.SET_AI_PASSENGER_TARGET, "");
+           data.putBoolean("sam_ai_cleared", true);
+       }
+       if ((fireCd = data.getInt("sam_fire_cd")) > 0) {
+           data.putInt("sam_fire_cd", fireCd - 1);
+       }
+       if ((target = SamUnitAI.resolveTarget(level, self, data)) == null) {
+           return;
+       }
+       Vec3 aim = WorldQueries.center(target).add(target.getDeltaMovement().scale(8.0));
+       Sbw.call(self, Sbw.TURRET_AIM, aim);
+       Sbw.call(self, Sbw.ADJUST_TURRET, new Object[0]);
+       if (data.getInt("sam_fire_cd") > 0 || SamUnitAI.saturated(target)) {
+           return;
+       }
+       double range = SamUnitAI.rangeFor(target);
+       if (self.distanceToSqr(target) > range * range || (!(target instanceof Projectile) && WorldQueries.heightAboveGround(level, target) < 8.0)) {
+           return;
+       }
+       if (!WorldQueries.lineOfSight(level, SamUnitAI.launchPos(self), aim, self)) {
+           int blind = data.getInt("sam_blind") + 1;
+           data.putInt("sam_blind", blind);
+           data.putInt("sam_fire_cd", 2);
+           if (blind >= 20) {
+               data.putString("sam_target", "");
+               data.putInt("sam_blind", 0);
+           }
+           return;
+       }
+       data.putInt("sam_blind", 0);
+       SamUnitAI.fire(level, self, data, target, aim);
    }
 
    private static double rangeFor(Entity target) {
@@ -130,23 +124,20 @@ public final class SamUnitAI {
       return best;
    }
 
-   /** Cheap per-tick validation (type / side / range). LOS and height are checked when firing. */
+
    private static boolean isValidTarget(ServerLevel level, Entity self, Entity target) {
-      if (!UnitTracker.isLive(level, target) || target.isSpectator()) {
-         return false;
-      }
-
-      double range = rangeFor(target);
-      if (self.distanceToSqr(target) > range * range) {
-         return false;
-      }
-
-      if (target instanceof Projectile projectile) {
-         return Classify.is(projectile, Classify.AIR_DEFENSE_TARGET) && !Targeting.isFriendly(self, projectile)
-            && !Targeting.isFriendlyOwner(self, projectile);
-      }
-
-      return isHostileAircraft(self, target);
+       if (!UnitTracker.isLive(level, target) || target.isSpectator()) {
+           return false;
+       }
+       double range = SamUnitAI.rangeFor(target);
+       if (self.distanceToSqr(target) > range * range) {
+           return false;
+       }
+       if (target instanceof Projectile) {
+           Projectile projectile = (Projectile) target;
+           return Classify.is((Entity) projectile, 16) && !Targeting.isFriendly(self, (Entity) projectile) && !Targeting.isFriendlyOwner(self, projectile) && (Config.SAM_INTERCEPT_SMALL_SHELLS.get() || !Classify.is(projectile, Classify.SMALL_SHELL)) && (Config.SAM_ENGAGE_NON_THREATS.get() || ThreatIndex.threatTimeToGo(level, self, projectile) >= 0);
+       }
+       return SamUnitAI.isHostileAircraft(self, target);
    }
 
    private static boolean isHostileAircraft(Entity self, Entity entity) {
@@ -155,123 +146,58 @@ public final class SamUnitAI {
    }
 
    private static Entity scan(ServerLevel level, Entity self) {
-      UnitTracker.Units units = UnitTracker.get(level);
-      double maxRange = Math.max(Config.SAM_RANGE.get(), Config.SAM_STEALTH_RANGE.get());
-      double maxRangeSqr = maxRange * maxRange;
-      boolean engageAll = Config.SAM_ENGAGE_NON_THREATS.get();
-      List<Candidate> candidates = new ArrayList<>();
-      Entity[] friendlies = friendlyUnits(units);
-
-      for (Entity e : units.projectiles()) {
-         if (!(e instanceof Projectile projectile) || !Classify.is(e, Classify.AIR_DEFENSE_TARGET)) {
-            continue;
-         }
-
-         double d = self.distanceToSqr(e);
-         if (d > maxRangeSqr || !UnitTracker.isLive(level, e) || Targeting.isFriendlyOwner(self, projectile)) {
-            continue;
-         }
-
-         double timeToGo = threatTimeToGo(level, self, e, friendlies);
-         if (timeToGo >= 0.0) {
-            candidates.add(new Candidate(e, Kind.THREAT, timeToGo));
-         } else if (engageAll) {
-            candidates.add(new Candidate(e, Kind.PROJECTILE, d));
-         }
-      }
-
-      for (Targeting.Contact c : Targeting.contacts(level, self, maxRange)) {
-         if (c.air() && isHostileAircraft(self, c.entity())) {
-            candidates.add(new Candidate(c.entity(), Kind.AIRCRAFT, c.distSqr()));
-         }
-      }
-
-      candidates.sort(Comparator.<Candidate>comparingInt(c -> c.kind().ordinal()).thenComparingDouble(Candidate::sortKey));
-      Vec3 eye = launchPos(self);
-      int budget = Config.MAX_LOS_CHECKS_PER_SCAN.get();
-      Entity saturatedFallback = null;
-      for (Candidate c : candidates) {
-         Entity e = c.entity();
-         double range = rangeFor(e);
-         if (self.distanceToSqr(e) > range * range || WorldQueries.heightAboveGround(level, e) < MIN_TARGET_HEIGHT) {
-            continue;
-         }
-
-         if (saturated(e)) {
-            // Already enough missiles on it; track it only if nothing else is worth a shot.
-            if (saturatedFallback == null) {
+       UnitTracker.Units units = UnitTracker.get(level);
+       double maxRange = Math.max((Double) Config.SAM_RANGE.get(), (Double) Config.SAM_STEALTH_RANGE.get());
+       double maxRangeSqr = maxRange * maxRange;
+       boolean engageAll = (Boolean) Config.SAM_ENGAGE_NON_THREATS.get();
+       ArrayList<Candidate> candidates = new ArrayList<Candidate>();
+       for (Entity e : BattleIndex.projectiles(level, self, maxRange)) {
+           double d;
+           if (!(e instanceof Projectile))
+               continue;
+           Projectile projectile = (Projectile) e;
+           if (!Classify.is(e, 16) || (d = self.distanceToSqr(e)) > maxRangeSqr || !UnitTracker.isLive(level, e) || Targeting.isFriendlyOwner(self, projectile))
+               continue;
+           if (!Config.SAM_INTERCEPT_SMALL_SHELLS.get() && Classify.is(e, Classify.SMALL_SHELL))
+               continue;
+           double timeToGo = ThreatIndex.threatTimeToGo(level, self, e);
+           if (timeToGo >= 0.0) {
+               candidates.add(new Candidate(e, Kind.THREAT, timeToGo));
+               continue;
+           }
+           if (!engageAll)
+               continue;
+           candidates.add(new Candidate(e, Kind.PROJECTILE, d));
+       }
+       for (Targeting.Contact c2 : Targeting.contacts(level, self, maxRange)) {
+           if (!c2.air() || !SamUnitAI.isHostileAircraft(self, c2.entity()))
+               continue;
+           candidates.add(new Candidate(c2.entity(), Kind.AIRCRAFT, c2.distSqr()));
+       }
+       candidates.sort(Comparator.<Candidate>comparingInt( c -> c.kind().ordinal()).thenComparingDouble(Candidate::sortKey));
+       Vec3 eye = SamUnitAI.launchPos(self);
+       int budget = (Integer) Config.MAX_LOS_CHECKS_PER_SCAN.get();
+       Entity saturatedFallback = null;
+       for (Candidate c3 : candidates) {
+           Entity e = c3.entity();
+           double range = SamUnitAI.rangeFor(e);
+           if (self.distanceToSqr(e) > range * range || (!(e instanceof Projectile) && WorldQueries.heightAboveGround(level, e) < 8.0))
+               continue;
+           if (SamUnitAI.saturated(e)) {
+               if (saturatedFallback != null)
+                   continue;
                saturatedFallback = e;
-            }
-
-            continue;
-         }
-
-         if (budget-- <= 0) {
-            break;
-         }
-
-         if (WorldQueries.lineOfSight(level, eye, WorldQueries.center(e), self)) {
-            return e;
-         }
-      }
-
-      return saturatedFallback;
+               continue;
+           }
+           if (budget-- <= 0)
+               break;
+           if (!WorldQueries.lineOfSight(level, eye, WorldQueries.center(e), self))
+               continue;
+           return e;
+       }
+       return saturatedFallback;
    }
 
-   private static Entity[] friendlyUnits(UnitTracker.Units units) {
-      Entity[] ground = units.ground();
-      Entity[] sams = units.sams();
-      Entity[] all = new Entity[ground.length + sams.length];
-      System.arraycopy(ground, 0, all, 0, ground.length);
-      System.arraycopy(sams, 0, all, ground.length, sams.length);
-      return all;
-   }
-
-   /**
-    * Ticks until impact if the projectile threatens the SAM or a friendly unit, otherwise -1.
-    * Guided munitions are judged by their lock, unguided ones by heading.
-    */
-   private static double threatTimeToGo(ServerLevel level, Entity self, Entity projectile, Entity[] friendlies) {
-      Vec3 pos = projectile.position();
-      Vec3 vel = projectile.getDeltaMovement();
-      double speed = Math.max(vel.length(), 0.05);
-      String lock = Sbw.targetUuid(projectile);
-      if (!lock.isEmpty() && !"none".equals(lock)) {
-         Entity locked = Targeting.byUuid(level, lock);
-         if (locked != null && (locked == self || Targeting.isFriendly(self, locked) || Targeting.isFriendlyVehicle(self, locked.getRootVehicle()))) {
-            return pos.distanceTo(locked.position()) / speed;
-         }
-
-         return -1.0;
-      }
-
-      if (vel.lengthSqr() < 0.01) {
-         return -1.0;
-      }
-
-      Vec3 dir = vel.scale(1.0 / speed);
-      double best = -1.0;
-      if (heading(pos, dir, self.position())) {
-         best = pos.distanceTo(self.position()) / speed;
-      }
-
-      for (Entity friend : friendlies) {
-         if (friend.level() == level && heading(pos, dir, friend.position())) {
-            double t = pos.distanceTo(friend.position()) / speed;
-            if (best < 0.0 || t < best) {
-               best = t;
-            }
-         }
-      }
-
-      return best;
-   }
-
-   private static boolean heading(Vec3 pos, Vec3 dir, Vec3 at) {
-      Vec3 to = at.subtract(pos);
-      double d = to.length();
-      return d <= UNGUIDED_THREAT_RADIUS && d > 1.0E-3 && dir.dot(to.scale(1.0 / d)) > THREAT_CONE;
-   }
 
    private static Vec3 launchPos(Entity self) {
       Vec3 fallback = self.position().add(0.0, 1.5, 0.0).add(self.getLookAngle().scale(2.0));
@@ -279,32 +205,38 @@ public final class SamUnitAI {
    }
 
    private static void fire(ServerLevel level, Entity self, CompoundTag data, Entity target, Vec3 aim) {
-      Vec3 start = launchPos(self);
-      Vec3 dir = aim.subtract(start);
-      if (dir.lengthSqr() < 0.01) {
-         return;
-      }
-
-      EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.tryParse(MISSILE_ID));
-      Entity missile = type == null ? null : type.create(level);
-      if (missile == null) {
-         return;
-      }
-
-      dir = dir.normalize();
-      missile.moveTo(start.x, start.y, start.z, F16FlightAI.yawOf(dir), F16FlightAI.pitchOf(dir));
-      missile.setDeltaMovement(dir.scale(MISSILE_SPEED));
-      if (missile instanceof Projectile p) {
-         p.setOwner(self);
-      }
-
-      Sbw.call(missile, Sbw.SET_DAMAGE, IR_DAMAGE);
-      Sbw.call(missile, Sbw.SET_EXPLOSION_DAMAGE, IR_EXPLOSION_DAMAGE);
-      Sbw.call(missile, Sbw.SET_EXPLOSION_RADIUS, IR_EXPLOSION_RADIUS);
-      Sbw.lockMissile(missile, target, aim);
-      if (level.addFreshEntity(missile)) {
-         data.putInt("sam_fire_cd", Config.SAM_FIRE_INTERVAL.get());
-         Targeting.registerShot(target, missile);
-      }
+       boolean intercept = target instanceof Projectile;
+       if (!BattleBudget.canFire(level, intercept) || !SupplySystem.canFire(self, MISSILE_ID))
+           return;
+       Entity missile;
+       Vec3 start = SamUnitAI.launchPos(self);
+       Vec3 dir = aim.subtract(start);
+       if (dir.lengthSqr() < 0.01) {
+           return;
+       }
+       EntityType type = (EntityType) ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.tryParse((String) MISSILE_ID));
+       Entity entity = missile = type == null ? null : type.create((Level) level);
+       if (missile == null) {
+           return;
+       }
+       dir = dir.normalize();
+       missile.moveTo(start.x, start.y, start.z, F16FlightAI.yawOf(dir), F16FlightAI.pitchOf(dir));
+       missile.setDeltaMovement(dir.scale(3.0));
+       if (missile instanceof Projectile) {
+           Projectile p = (Projectile) missile;
+           p.setOwner(self);
+       }
+       Sbw.call(missile, Sbw.SET_DAMAGE, Float.valueOf(260.0f));
+       Sbw.call(missile, Sbw.SET_EXPLOSION_DAMAGE, Float.valueOf(160.0f));
+       Sbw.call(missile, Sbw.SET_EXPLOSION_RADIUS, Float.valueOf(6.0f));
+       Sbw.lockMissile(missile, target, aim);
+       BattleBudget.prepare(missile);
+       missile.getPersistentData().putInt("ef_lifetime", Config.SAM_MISSILE_LIFETIME.get());
+       if (level.addFreshEntity(missile)) {
+           BattleBudget.fired(level);
+           SupplySystem.consume(self, MISSILE_ID);
+           data.putInt("sam_fire_cd", ((Integer) Config.SAM_FIRE_INTERVAL.get()).intValue());
+           Targeting.registerShot(target, missile);
+       }
    }
 }

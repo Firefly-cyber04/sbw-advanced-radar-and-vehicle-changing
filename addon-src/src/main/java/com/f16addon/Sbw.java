@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.phys.Vec3;
+import org.slf4j.Logger;
 
 /**
  * Reflection bridge to Superb Warfare / DragonRise.
@@ -45,9 +46,9 @@ public final class Sbw {
    public static final Sig SET_TARGET_POS = new Sig("setTargetPos", Vec3.class);
    public static final Sig SET_GUIDE_TYPE = new Sig("setGuideType", int.class);
    public static final Sig SET_DISTRACTED = new Sig("setDistracted", boolean.class);
-   public static final Sig SET_DAMAGE = new Sig("setDamageValue", float.class);
-   public static final Sig SET_EXPLOSION_DAMAGE = new Sig("setExplosionDamageValue", float.class);
-   public static final Sig SET_EXPLOSION_RADIUS = new Sig("setExplosionRadiusValue", float.class);
+   public static final Sig SET_DAMAGE = new Sig("setDamage", Float.TYPE);
+   public static final Sig SET_EXPLOSION_DAMAGE = new Sig("setExplosionDamage", Float.TYPE);
+   public static final Sig SET_EXPLOSION_RADIUS = new Sig("setExplosionRadius", Float.TYPE);
 
    private static final Optional<Method> MISSING = Optional.empty();
    private static final ClassValue<Map<Sig, Optional<Method>>> METHODS = new ClassValue<>() {
@@ -247,4 +248,14 @@ public final class Sbw {
    public static Vec3 shootPos(Entity entity, String weapon, Vec3 fallback) {
       return call(entity, GET_SHOOT_POS, weapon, 1.0F) instanceof Vec3 v ? v : fallback;
    }
+
+   public static final Sig GET_MAX_HEALTH = new Sig("getMaxHealth", new Class[0]);
+
+   public static final Sig GET_GEAR_UP = new Sig("getGearUp", new Class[0]);
+
+   public static final Sig SET_SYNCED_GEAR_ROT = new Sig("setSynchedGearRot", Float.TYPE);
+
+   public static final Sig GET_SYNCED_GEAR_ROT = new Sig("getSynchedGearRot", new Class[0]);
+
+   public static final Sig SET_GEAR_ROT = new Sig("setGearRot", Float.TYPE);
 }

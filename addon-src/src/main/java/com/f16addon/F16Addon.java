@@ -34,6 +34,9 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.config.ModConfigEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
+import com.mojang.brigadier.arguments.ArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import net.minecraftforge.fml.config.IConfigSpec;
 
 @Mod(F16Addon.MODID)
 public final class F16Addon {
@@ -69,66 +72,66 @@ public final class F16Addon {
    // ----------------------------------------------------------------------------------------------------------------
 
    private static void onServerTick(TickEvent.ServerTickEvent event) {
-      if (event.phase != TickEvent.Phase.END) {
-         return;
-      }
-
-      MinecraftServer server = event.getServer();
-      if (server == null) {
-         return;
-      }
-
-      long start = System.nanoTime();
-      for (ServerLevel level : server.getAllLevels()) {
-         tickLevel(level);
-      }
-
-      if (server.getTickCount() % 20 == 0) {
-         Targeting.pruneBoard();
-      }
-
-      PERF.record(System.nanoTime() - start);
+       if (event.phase != TickEvent.Phase.END) {
+           return;
+       }
+       MinecraftServer server = event.getServer();
+       if (server == null) {
+           return;
+       }
+       java.util.Arrays.fill(PHASE_NANOS, 0);
+       long start = System.nanoTime();
+       for (ServerLevel level : server.getAllLevels()) {
+           F16Addon.tickLevel(level);
+       }
+       if (server.getTickCount() % 20 == 0) {
+           Targeting.pruneBoard();
+       }
+       PERF.record(System.nanoTime() - start);
+       for (int i = 0; i < PHASE_PERF.length; i++) PHASE_PERF[i].record(PHASE_NANOS[i]);
    }
 
    private static void tickLevel(ServerLevel level) {
-      UnitTracker.maintain(level);
-      if (!UnitTracker.levelTicksEntities(level)) {
-         return;
-      }
-
-      UnitTracker.Units units = UnitTracker.get(level);
-
-      tickProjectiles(level, units);
-
-      long time = level.getGameTime();
-      for (Entity f16 : units.f16()) {
-         if (!readyToThink(level, f16)) {
-            continue;
-         }
-
-         if (F16FlightAI.isWrecked(f16)) {
-            F16FlightAI.tick(level, f16);
-            continue;
-         }
-
-         initializeGunData(f16);
-         F16FlightAI.tick(level, f16);
-         if ((time + f16.getId()) % ENERGY_REFILL_INTERVAL == 0L) {
-            refillEnergy(f16);
-         }
-      }
-
-      for (Entity unit : units.ground()) {
-         if (readyToThink(level, unit)) {
-            GroundUnitAI.tick(level, unit);
-         }
-      }
-
-      for (Entity sam : units.sams()) {
-         if (readyToThink(level, sam)) {
-            SamUnitAI.tick(level, sam);
-         }
-      }
+       UnitTracker.maintain(level);
+       if (!UnitTracker.levelTicksEntities(level)) {
+           return;
+       }
+       UnitTracker.Units units = UnitTracker.get(level);
+       long phaseStart = System.nanoTime();
+       F16Addon.tickProjectiles(level, units);
+       PHASE_NANOS[0] += System.nanoTime() - phaseStart;
+       EncounterDirector.tick(level);
+       long time = level.getGameTime();
+       phaseStart = System.nanoTime();
+       for (Entity f16 : units.f16()) {
+           if (!F16Addon.readyToThink(level, f16))
+               continue;
+           if (F16FlightAI.isWrecked(f16)) {
+               F16FlightAI.tick(level, f16);
+               continue;
+           }
+           F16Addon.initializeGunData(f16);
+           F16FlightAI.tick(level, f16);
+           if ((time + (long) f16.getId()) % 20L != 0L)
+               continue;
+           if (Config.F16_INFLIGHT_ENERGY.get() || SupplySystem.nearHome(f16))
+               F16Addon.refillEnergy(f16);
+       }
+       PHASE_NANOS[1] += System.nanoTime() - phaseStart;
+       phaseStart = System.nanoTime();
+       for (Entity unit : units.ground()) {
+           if (!F16Addon.readyToThink(level, unit))
+               continue;
+           GroundUnitAI.tick(level, unit);
+       }
+       PHASE_NANOS[2] += System.nanoTime() - phaseStart;
+       phaseStart = System.nanoTime();
+       for (Entity sam : units.sams()) {
+           if (!F16Addon.readyToThink(level, sam))
+               continue;
+           SamUnitAI.tick(level, sam);
+       }
+       PHASE_NANOS[3] += System.nanoTime() - phaseStart;
    }
 
    /**
@@ -145,42 +148,49 @@ public final class F16Addon {
    }
 
    private static void tickProjectiles(ServerLevel level, UnitTracker.Units units) {
-      int normal = Config.PROJECTILE_MAX_LIFETIME.get();
-      int ir = Config.IR_AAM_MAX_LIFETIME.get();
-      List<Entity> expired = null;
-      for (Entity entity : units.projectiles()) {
-         if (entity.isRemoved()) {
-            continue;
-         }
-
-         int traits = Classify.traits(entity.getClass());
-         int max = (traits & Classify.CRUISE) != 0 ? Integer.MAX_VALUE : ((traits & Classify.IR_AAM) != 0 ? ir : normal);
-         if (entity.tickCount > max) {
-            if (expired == null) {
-               expired = new ArrayList<>();
-            }
-
-            expired.add(entity);
-            continue;
-         }
-
-         if ((traits & (Classify.IR_AAM | Classify.RADAR_AAM)) != 0 && F16MissileDefense.isEnemyAam(entity)) {
-            F16MissileDefense.tick(level, entity);
-         }
-
-         MissileFlight.checkOvershoot(level, entity);
-      }
-
-      if (expired != null) {
-         for (Entity e : expired) {
-            e.discard();
-         }
-      }
+       int normal = (Integer) Config.PROJECTILE_MAX_LIFETIME.get();
+       int ir = (Integer) Config.IR_AAM_MAX_LIFETIME.get();
+       ArrayList<Entity> expired = null;
+       for (Entity entity : units.projectiles()) {
+           if (entity.isRemoved())
+               continue;
+           if (entity.getTags().contains(BattleBudget.AI_SHOT) && !Config.AI_PROJECTILE_CHUNK_LOADING.get() && !WorldQueries.isEntityTicking(level, entity)) {
+               if (expired == null)
+                   expired = new ArrayList<>();
+               expired.add(entity);
+               continue;
+           }
+           int traits = Classify.traits(entity.getClass());
+           if (Classify.managedLifetime(entity)) {
+               int max = (traits & Classify.CRUISE) != 0 ? Config.CRUISE_MAX_LIFETIME.get() : (traits & Classify.IR_AAM) != 0 ? ir : normal;
+               int override = entity.getPersistentData().getInt("ef_lifetime");
+               if (override > 0)
+                   max = Math.min(72000, override);
+               if (entity.tickCount > max) {
+                   if (expired == null)
+                       expired = new ArrayList<>();
+                   expired.add(entity);
+                   continue;
+               }
+           }
+           if ((traits & 3) != 0 && F16MissileDefense.isEnemyAam(entity)) {
+               F16MissileDefense.tick(level, entity);
+           }
+           MissileFlight.checkOvershoot(level, entity);
+       }
+       if (expired != null) {
+           for (Entity e : expired) {
+               e.discard();
+           }
+       }
    }
 
    private static void onServerStopped(ServerStoppedEvent event) {
-      Targeting.clearBoard();
-      PERF.reset();
+       Targeting.clearBoard();
+       UnitTracker.clear();
+       MissileFlight.clear();
+       PERF.reset();
+       for (Perf phase : PHASE_PERF) phase.reset();
    }
 
    // ----------------------------------------------------------------------------------------------------------------
@@ -236,19 +246,17 @@ public final class F16Addon {
    // ----------------------------------------------------------------------------------------------------------------
 
    private static void onRegisterCommands(RegisterCommandsEvent event) {
-      LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("f16addon")
-         .then(Commands.literal("lock").then(Commands.argument("uuid", StringArgumentType.string())
-            .executes(ctx -> lockTarget(ctx.getSource(), StringArgumentType.getString(ctx, "uuid")))))
-         .then(Commands.literal("clear").executes(ctx -> clearTargets(ctx.getSource())))
-         .then(Commands.literal("mode").then(Commands.argument("mode", StringArgumentType.word())
-            .executes(ctx -> setMode(ctx.getSource(), StringArgumentType.getString(ctx, "mode")))))
-         .then(Commands.literal("playerlock").then(Commands.argument("uuid", StringArgumentType.string())
-            .executes(ctx -> setPlayerLock(ctx.getSource(), StringArgumentType.getString(ctx, "uuid")))))
-         .then(Commands.literal("playerclear").executes(ctx -> clearPlayerLock(ctx.getSource())))
-         .then(Commands.literal("groundmode").then(Commands.argument("mode", StringArgumentType.word())
-            .executes(ctx -> setGroundMode(ctx.getSource(), StringArgumentType.getString(ctx, "mode")))))
-         .then(Commands.literal("perf").requires(s -> s.hasPermission(2)).executes(ctx -> perf(ctx.getSource())));
-      event.getDispatcher().register(root);
+       LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal(MODID);
+       root.then(Commands.literal("lock").then(Commands.argument("uuid", StringArgumentType.string()).executes( ctx -> lockTarget(ctx.getSource(), StringArgumentType.getString(ctx, "uuid")))));
+       root.then(Commands.literal("clear").executes( ctx -> clearTargets(ctx.getSource())));
+       root.then(Commands.literal("mode").then(Commands.argument("mode", StringArgumentType.word()).executes( ctx -> setMode(ctx.getSource(), StringArgumentType.getString(ctx, "mode")))));
+       root.then(Commands.literal("playerlock").then(Commands.argument("uuid", StringArgumentType.string()).executes( ctx -> setPlayerLock(ctx.getSource(), StringArgumentType.getString(ctx, "uuid")))));
+       root.then(Commands.literal("playerclear").executes( ctx -> clearPlayerLock(ctx.getSource())));
+       root.then(Commands.literal("groundmode").then(Commands.argument("mode", StringArgumentType.word()).executes( ctx -> setGroundMode(ctx.getSource(), StringArgumentType.getString(ctx, "mode")))));
+       root.then(Commands.literal("perf").requires( source -> source.hasPermission(2)).executes( ctx -> perf(ctx.getSource())));
+       root.then(Commands.literal("resupply").requires( source -> source.hasPermission(2)).executes( ctx -> resupply(ctx.getSource())));
+       root.then(Commands.literal("encounter").requires( source -> source.hasPermission(2)).then(Commands.literal("start").executes( ctx -> EncounterDirector.start(ctx.getSource().getPlayerOrException()))).then(Commands.literal("status").executes( ctx -> EncounterDirector.status(ctx.getSource().getPlayerOrException()))).then(Commands.literal("stop").executes( ctx -> EncounterDirector.stop(ctx.getSource().getPlayerOrException()))));
+       event.getDispatcher().register(root);
    }
 
    private static ServerPlayer player(CommandSourceStack source) {
@@ -404,25 +412,24 @@ public final class F16Addon {
    }
 
    private static int perf(CommandSourceStack source) {
-      int f16 = 0;
-      int ground = 0;
-      int sam = 0;
-      int vehicles = 0;
-      int projectiles = 0;
-      for (ServerLevel level : source.getServer().getAllLevels()) {
-         UnitTracker.Units u = UnitTracker.get(level);
-         f16 += u.f16().length;
-         ground += u.ground().length;
-         sam += u.sams().length;
-         vehicles += u.vehicleCount();
-         projectiles += u.projectileCount();
-      }
-
-      String text = String.format(Locale.ROOT,
-         "Enemy Forces AI: avg %.3f ms / tick, max %.3f ms (last %d ticks)%n units: %d F-16, %d ground, %d SAM | tracked: %d vehicles, %d projectiles",
-         PERF.averageMs(), PERF.maxMs(), PERF.window(), f16, ground, sam, vehicles, projectiles);
-      source.sendSuccess(() -> Component.literal(text).withStyle(ChatFormatting.AQUA), false);
-      return 1;
+       int f16 = 0;
+       int ground = 0;
+       int sam = 0;
+       int vehicles = 0;
+       int projectiles = 0;
+       for (ServerLevel level : source.getServer().getAllLevels()) {
+           UnitTracker.Units u = UnitTracker.get(level);
+           f16 += u.f16().length;
+           ground += u.ground().length;
+           sam += u.sams().length;
+           vehicles += u.vehicleCount();
+           projectiles += u.projectileCount();
+       }
+       String text = String.format(Locale.ROOT, "Enemy Forces AI: avg %.3f ms / tick, max %.3f ms (last %d ticks)%n units: %d F-16, %d ground, %d SAM | tracked: %d vehicles, %d projectiles", PERF.averageMs(), PERF.maxMs(), PERF.window(), f16, ground, sam, vehicles, projectiles);
+       String breakdown = String.format(Locale.ROOT, "%n AI phases avg ms: cleanup %.3f | F-16 %.3f | ground %.3f | SAM %.3f", PHASE_PERF[0].averageMs(), PHASE_PERF[1].averageMs(), PHASE_PERF[2].averageMs(), PHASE_PERF[3].averageMs());
+       String output = text + breakdown;
+       source.sendSuccess(() -> Component.literal(output).withStyle(ChatFormatting.AQUA), false);
+       return 1;
    }
 
    /** Rolling AI cost over the last 200 ticks, for {@code /f16addon perf}. */
@@ -467,5 +474,20 @@ public final class F16Addon {
 
          return max / 1.0E6;
       }
+   }
+
+   private static final Perf[] PHASE_PERF = { new Perf(), new Perf(), new Perf(), new Perf() };
+
+   private static final long[] PHASE_NANOS = new long[4];
+
+   private static int resupply(CommandSourceStack source) {
+       ServerPlayer player = player(source);
+       if (player == null)
+           return 0;
+       UnitTracker.Units units = UnitTracker.get(player.serverLevel());
+       int count = forUnitsNear(player, units.f16(), SupplySystem::refill) + forUnitsNear(player, units.ground(), SupplySystem::refill) + forUnitsNear(player, units.sams(), SupplySystem::refill);
+       int serviced = count;
+       source.sendSuccess(() -> Component.literal("已补给附近 " + serviced + " 个单位"), false);
+       return count;
    }
 }

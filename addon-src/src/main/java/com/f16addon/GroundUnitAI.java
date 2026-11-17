@@ -15,6 +15,7 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraft.world.level.Level;
 
 public final class GroundUnitAI {
    private static final double ADVANCE_STANDOFF = 48.0;
@@ -47,77 +48,80 @@ public final class GroundUnitAI {
    }
 
    public static void tick(ServerLevel level, Entity self) {
-      CompoundTag data = self.getPersistentData();
-      if (Sbw.isWrecked(self)) {
-         clearTarget(self, data);
-         self.setDeltaMovement(Vec3.ZERO);
-         return;
-      }
-
-      String mode = data.getString("ground_mode");
-      if (mode.isEmpty()) {
-         mode = "advance";
-         data.putString("ground_mode", mode);
-      }
-
-      if (mode.equals("stop")) {
-         clearTarget(self, data);
-         return;
-      }
-
-      int fireCooldown = data.getInt("ground_fire_cd");
-      if (fireCooldown > 0) {
-         data.putInt("ground_fire_cd", fireCooldown - 1);
-      }
-
-      Entity target = resolveTarget(level, self, data);
-      if (target == null) {
-         clearTarget(self, data);
-         if (!mode.equals("hold")) {
-            patrol(level, self, data);
-         }
-
-         return;
-      }
-
-      applyTarget(self, target);
-      data.putBoolean("ground_cleared", false);
-      Vec3 aim = leadPoint(self, target);
-      Sbw.call(self, Sbw.TURRET_AIM, aim);
-      Sbw.call(self, Sbw.ADJUST_TURRET);
-      Vec3 toTarget = target.position().subtract(self.position());
-      if (toTarget.lengthSqr() < 0.001) {
-         return;
-      }
-
-      double distance = Math.sqrt(toTarget.lengthSqr());
-      double standoff = mode.equals("follow") ? FOLLOW_STANDOFF : ADVANCE_STANDOFF;
-      if (data.getInt("ground_blind_ticks") >= BLIND_CLOSE_IN) {
-         standoff = MIN_STANDOFF;
-      }
-
-      if (!mode.equals("hold") && distance > standoff) {
-         navigate(level, self, data, toTarget, MAX_SPEED);
-      } else {
-         // Stationary: keep the frontal armour toward the enemy.
-         face(self, toTarget);
-      }
-
-      if (distance <= Config.GROUND_ATTACK_RANGE.get() && data.getInt("ground_fire_cd") <= 0) {
-         if (WorldQueries.lineOfSight(level, shootPos(self), aim, self)) {
-            data.putInt("ground_blind_ticks", 0);
-            fire(level, self, data, aim);
-         } else {
-            data.putInt("ground_fire_cd", 5);
-            int blind = data.getInt("ground_blind_ticks") + 5;
-            data.putInt("ground_blind_ticks", blind);
-            if (blind >= LOS_MEMORY) {
-               // Target hid; look for something we can actually see.
-               data.putString("ground_target", "");
+       double standoff;
+       Entity target;
+       CompoundTag data = self.getPersistentData();
+       if (Sbw.isWrecked(self)) {
+           GroundUnitAI.clearTarget(self, data);
+           self.setDeltaMovement(Vec3.ZERO);
+           return;
+       }
+       String mode = data.getString("ground_mode");
+       if (mode.isEmpty()) {
+           mode = "advance";
+           data.putString("ground_mode", mode);
+       }
+       if (mode.equals("stop")) {
+           SupplySystem.update(level, self);
+           GroundUnitAI.clearTarget(self, data);
+           self.setDeltaMovement(Vec3.ZERO);
+           return;
+       }
+       boolean servicing = SupplySystem.update(level, self);
+       if (servicing || SupplySystem.wounded(self)) {
+           GroundUnitAI.clearTarget(self, data);
+           Vec3 home = SupplySystem.home(self);
+           Vec3 toHome = home.subtract(self.position()).multiply(1.0, 0.0, 1.0);
+           if (toHome.lengthSqr() > 36.0)
+               GroundUnitAI.navigate(level, self, data, toHome, PATROL_SPEED);
+           else
+               self.setDeltaMovement(Vec3.ZERO);
+           return;
+       }
+       int fireCooldown = data.getInt("ground_fire_cd");
+       if (fireCooldown > 0) {
+           data.putInt("ground_fire_cd", fireCooldown - 1);
+       }
+       if ((target = GroundUnitAI.resolveTarget(level, self, data)) == null) {
+           GroundUnitAI.clearTarget(self, data);
+           if (!mode.equals("hold")) {
+               GroundUnitAI.patrol(level, self, data);
+           }
+           return;
+       }
+       GroundUnitAI.applyTarget(self, target);
+       data.putBoolean("ground_cleared", false);
+       Vec3 aim = GroundUnitAI.leadPoint(self, target);
+       Sbw.call(self, Sbw.TURRET_AIM, aim);
+       Sbw.call(self, Sbw.ADJUST_TURRET, new Object[0]);
+       Vec3 toTarget = target.position().subtract(self.position());
+       if (toTarget.lengthSqr() < 0.001) {
+           return;
+       }
+       double distance = Math.sqrt(toTarget.lengthSqr());
+       double d = standoff = mode.equals("follow") ? 24.0 : 48.0;
+       if (data.getInt("ground_blind_ticks") >= 20) {
+           standoff = 16.0;
+       }
+       if (!mode.equals("hold") && distance > standoff) {
+           GroundUnitAI.navigate(level, self, data, toTarget, 0.18);
+       } else {
+           GroundUnitAI.face(self, toTarget);
+       }
+       if (distance <= (Double) Config.GROUND_ATTACK_RANGE.get() && data.getInt("ground_fire_cd") <= 0) {
+           if (WorldQueries.lineOfSight(level, GroundUnitAI.shootPos(self), aim, self)) {
                data.putInt("ground_blind_ticks", 0);
-            }
-         }
-      }
+               GroundUnitAI.fire(level, self, data, aim);
+           } else {
+               data.putInt("ground_fire_cd", 5);
+               int blind = data.getInt("ground_blind_ticks") + 5;
+               data.putInt("ground_blind_ticks", blind);
+               if (blind >= 60) {
+                   data.putString("ground_target", "");
+                   data.putInt("ground_blind_ticks", 0);
+               }
+           }
+       }
    }
 
    private static void patrol(ServerLevel level, Entity self, CompoundTag data) {
@@ -331,37 +335,49 @@ public final class GroundUnitAI {
    }
 
    private static void fire(ServerLevel level, Entity self, CompoundTag data, Vec3 aim) {
-      boolean bmpt = isBmpt(self);
-      float damage = bmpt ? 15.0F : 250.0F;
-      float explosionDamage = bmpt ? 18.0F : 120.0F;
-      float explosionRadius = bmpt ? 5.0F : 10.0F;
-      double speed = bmpt ? 6.0 : 12.0;
-      int delay = bmpt ? 6 : 30;
-      Vec3 shootPos = shootPos(self);
-      Vec3 direction = aim.subtract(shootPos);
-      if (direction.lengthSqr() < 0.01) {
-         return;
-      }
-
-      direction = direction.normalize();
-      EntityType<?> type = shellType(bmpt);
-      Entity projectile = type == null ? null : type.create(level);
-      if (projectile == null) {
-         return;
-      }
-
-      projectile.moveTo(shootPos.x, shootPos.y, shootPos.z, F16FlightAI.yawOf(direction), F16FlightAI.pitchOf(direction));
-      projectile.setDeltaMovement(direction.scale(speed));
-      if (projectile instanceof Projectile p) {
-         p.setOwner(self);
-      }
-
-      Sbw.call(projectile, Sbw.SET_DAMAGE, damage);
-      Sbw.call(projectile, Sbw.SET_EXPLOSION_DAMAGE, explosionDamage);
-      Sbw.call(projectile, Sbw.SET_EXPLOSION_RADIUS, explosionRadius);
-      if (level.addFreshEntity(projectile)) {
-         data.putInt("ground_fire_cd", delay);
-      }
+       Entity projectile;
+       if (nativeWeaponsActive(self) || !BattleBudget.canFire(level, false))
+           return;
+       boolean bmpt = GroundUnitAI.isBmpt(self);
+       String projectileId = bmpt ? "superbwarfare:small_cannon_shell" : "superbwarfare:cannon_shell";
+       if (!SupplySystem.canFire(self, projectileId))
+           return;
+       float damage = bmpt ? 15.0f : 250.0f;
+       float explosionDamage = bmpt ? 18.0f : 120.0f;
+       float explosionRadius = (float) (bmpt ? Config.BMPT_EXPLOSION_RADIUS.get() : Config.TANK_EXPLOSION_RADIUS.get()).doubleValue();
+       double speed = bmpt ? 6.0 : 12.0;
+       int delay = bmpt ? Config.BMPT_SHOT_INTERVAL.get() : Config.TANK_RELOAD_TICKS.get();
+       Vec3 shootPos = GroundUnitAI.shootPos(self);
+       Vec3 direction = aim.subtract(shootPos);
+       if (direction.lengthSqr() < 0.01) {
+           return;
+       }
+       direction = direction.normalize();
+       EntityType<?> type = GroundUnitAI.shellType(bmpt);
+       Entity entity = projectile = type == null ? null : type.create((Level) level);
+       if (projectile == null) {
+           return;
+       }
+       projectile.moveTo(shootPos.x, shootPos.y, shootPos.z, F16FlightAI.yawOf(direction), F16FlightAI.pitchOf(direction));
+       projectile.setDeltaMovement(direction.scale(speed));
+       if (projectile instanceof Projectile) {
+           Projectile p = (Projectile) projectile;
+           p.setOwner(self);
+       }
+       Sbw.call(projectile, Sbw.SET_DAMAGE, Float.valueOf(damage));
+       Sbw.call(projectile, Sbw.SET_EXPLOSION_DAMAGE, Float.valueOf(explosionDamage));
+       Sbw.call(projectile, Sbw.SET_EXPLOSION_RADIUS, Float.valueOf(explosionRadius));
+       BattleBudget.prepare(projectile);
+       if (level.addFreshEntity(projectile)) {
+           BattleBudget.fired(level);
+           SupplySystem.consume(self, projectileId);
+           if (bmpt) {
+               int shots = data.getInt("ground_burst_count") + 1;
+               delay = com.f16addon.core.ThreatMath.burstCooldown(shots, Config.BMPT_BURST_SIZE.get(), delay, Config.BMPT_BURST_PAUSE.get());
+               data.putInt("ground_burst_count", shots >= Config.BMPT_BURST_SIZE.get() ? 0 : shots);
+           }
+           data.putInt("ground_fire_cd", delay);
+       }
    }
 
    private static boolean engageable(Targeting.Contact c) {
@@ -370,60 +386,71 @@ public final class GroundUnitAI {
    }
 
    private static Entity resolveTarget(ServerLevel level, Entity self, CompoundTag data) {
-      double range = Config.GROUND_SCAN_RANGE.get();
-      String targetId = data.getString("ground_target");
-      boolean lost = false;
-      if (!targetId.isEmpty()) {
-         Entity current = Targeting.byUuid(level, targetId);
-         if (current != null && Targeting.stillHostile(level, self, current) && self.distanceToSqr(current) <= range * range) {
-            return current;
-         }
-
-         data.putString("ground_target", "");
-         lost = true;
-      }
-
-      boolean scheduled = (level.getGameTime() + self.getId()) % Config.GROUND_SCAN_INTERVAL.get() == 0L;
-      if (!scheduled && !lost) {
-         return null;
-      }
-
-      List<Targeting.Contact> contacts = Targeting.contacts(level, self, range);
-      contacts.removeIf(c -> !engageable(c));
-      // Players (and player-crewed vehicles) first, then nearest — same priority as 1.0.0.
-      contacts.sort(Comparator.<Targeting.Contact>comparingInt(c -> c.playerManned() || c.entity() instanceof Player ? 0 : 1)
-         .thenComparingDouble(Targeting.Contact::distSqr));
-      if (contacts.isEmpty()) {
-         return null;
-      }
-
-      // Prefer something we can see right now; fall back to the top contact so the unit still closes in.
-      Vec3 eye = shootPos(self);
-      int budget = Config.MAX_LOS_CHECKS_PER_SCAN.get();
-      Entity best = contacts.get(0).entity();
-      for (int i = 0; i < contacts.size() && i < budget; i++) {
-         Entity candidate = contacts.get(i).entity();
-         if (WorldQueries.lineOfSight(level, eye, WorldQueries.center(candidate), self)) {
-            best = candidate;
-            break;
-         }
-      }
-
-      data.putString("ground_target", best.getStringUUID());
-      return best;
+       boolean scheduled;
+       double range = (Double) Config.GROUND_SCAN_RANGE.get();
+       String targetId = data.getString("ground_target");
+       boolean lost = false;
+       if (!targetId.isEmpty()) {
+           Entity current = Targeting.byUuid(level, targetId);
+           if (current != null && Targeting.stillHostile(level, self, current) && self.distanceToSqr(current) <= range * range) {
+               return current;
+           }
+           data.putString("ground_target", "");
+           lost = true;
+       }
+       boolean bl = scheduled = (level.getGameTime() + (long) self.getId()) % (long) ((Integer) Config.GROUND_SCAN_INTERVAL.get()).intValue() == 0L;
+       if (!scheduled && !lost) {
+           return null;
+       }
+       List<Targeting.Contact> contacts = Targeting.contacts(level, self, range);
+       contacts.removeIf( c -> !GroundUnitAI.engageable(c));
+       contacts.sort(Comparator.<Targeting.Contact>comparingInt( c -> {
+           boolean vehicle = Sbw.isVehicle(c.entity());
+           int role = GroundUnitAI.isBmpt(self) ? (vehicle ? 1 : 0) : (vehicle ? 0 : 1);
+           return role * 2 + (c.playerManned() ? 0 : 1);
+       }).thenComparingDouble(Targeting.Contact::distSqr));
+       if (contacts.isEmpty()) {
+           return null;
+       }
+       Vec3 eye = GroundUnitAI.shootPos(self);
+       int budget = (Integer) Config.MAX_LOS_CHECKS_PER_SCAN.get();
+       Entity best = contacts.get(0).entity();
+       for (int i = 0; i < contacts.size() && i < budget; ++i) {
+           Entity candidate = contacts.get(i).entity();
+           if (!WorldQueries.lineOfSight(level, eye, WorldQueries.center(candidate), self))
+               continue;
+           best = candidate;
+           break;
+       }
+       data.putString("ground_target", best.getStringUUID());
+       return best;
    }
 
    private static void applyTarget(Entity self, Entity target) {
-      Sbw.call(self, Sbw.SET_AI_TURRET_TARGET, target.getStringUUID());
-      Sbw.call(self, Sbw.SET_AI_PASSENGER_TARGET, target.getStringUUID());
+       CompoundTag data = self.getPersistentData();
+       String id = nativeWeaponsActive(self) ? target.getStringUUID() : "";
+       if (!data.contains("ef_native_target") || !id.equals(data.getString("ef_native_target"))) {
+           Sbw.call(self, Sbw.SET_AI_TURRET_TARGET, id);
+           Sbw.call(self, Sbw.SET_AI_PASSENGER_TARGET, id);
+           data.putString("ef_native_target", id);
+       }
    }
 
    private static void clearTarget(Entity self, CompoundTag data) {
-      if (!data.getString("ground_target").isEmpty() || !data.getBoolean("ground_cleared")) {
-         data.putString("ground_target", "");
-         data.putBoolean("ground_cleared", true);
-         Sbw.call(self, Sbw.SET_AI_TURRET_TARGET, "");
-         Sbw.call(self, Sbw.SET_AI_PASSENGER_TARGET, "");
-      }
+       if (!data.getString("ground_target").isEmpty() || !data.getBoolean("ground_cleared")) {
+           data.putString("ground_target", "");
+           data.putBoolean("ground_cleared", true);
+           Sbw.call(self, Sbw.SET_AI_TURRET_TARGET, "");
+           Sbw.call(self, Sbw.SET_AI_PASSENGER_TARGET, "");
+           data.putString("ef_native_target", "");
+       }
+   }
+
+   public static boolean nativeWeaponsActive(Entity self) {
+       if (!Config.GROUND_NATIVE_WEAPONS.get())
+           return false;
+       for (Entity crew : self.getPassengers()) if (crew instanceof net.minecraft.world.entity.Mob)
+           return true;
+       return false;
    }
 }

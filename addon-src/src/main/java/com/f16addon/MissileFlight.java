@@ -139,4 +139,9 @@ public final class MissileFlight {
          missile.setLostTarget(true);
       }
    }
+
+   static void clear() {
+       SERVER.clear();
+       CLIENT.clear();
+   }
 }

@@ -8,12 +8,16 @@
     "Aim120EntityMixin",
     "MissileProjectileMixin",
     "RadarScannerMixin",
-    "Ru9m336MissileEntityMixin"
+    "Ru9m336MissileEntityMixin",
+    "CustomExplosionMixin",
+    "NativeWeaponGateMixin",
+    "AiProjectileBoundaryMixin"
   ],
   "client": [
     "MapEntityRendererMixin",
     "TacticalMapCacheMixin",
-    "TacticalMapScreenMixin"
+    "TacticalMapScreenMixin",
+    "ExplosionParticleLodMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -21,49 +21,43 @@ public abstract class MissileProjectileMixin {
    private static final double DECOY_ANGLE = 60.0;
    private static final double DECOY_CHANCE = 0.25;
 
-   /**
-    * Same rule as SBW (each decoy within 32 blocks, 60° of the seeker axis, visible and not friendly: 25 % per tick),
-    * but SBW's {@code SeekTool.seekLivingEntities} walked every entity in the level — on both sides, every tick, for
-    * every missile — and only then kept the decoys. This asks for decoys around the missile.
-    */
-   @Inject(method = "distractedByDecoy()V", at = @At("HEAD"), cancellable = true)
-   private void f16addon$decoysNearby(CallbackInfo ci) {
-      ci.cancel();
-      MissileProjectile self = (MissileProjectile) (Object) this;
-      if (self.isDistracted()) {
-         return;
-      }
 
-      Vec3 eye = self.getEyePosition();
-      List<Entity> decoys = self.level().getEntities(self, self.getBoundingBox().inflate(DECOY_RANGE + 2.0),
-         e -> e.getType().is(ModTags.EntityTypes.DECOY));
-      for (Entity d : decoys) {
-         if (d.position().distanceToSqr(eye) > DECOY_RANGE * DECOY_RANGE || !(SeekTool.calculateAngle(d, self) < DECOY_ANGLE)) {
+   @Inject(method = { "distractedByDecoy()V" }, at = { @At(value = "HEAD") }, cancellable = true)
+private void f16addon$decoysNearby(CallbackInfo ci) {
+    ci.cancel();
+    MissileProjectile self = (MissileProjectile) (Object) this;
+    if (self.isDistracted()) {
+        return;
+    }
+    Vec3 eye = self.getEyePosition();
+    List<Entity> decoys = self.level().getEntities((Entity) self, self.getBoundingBox().inflate(34.0),  e -> e.getType().is(ModTags.EntityTypes.DECOY));
+    for (Entity d : decoys) {
+        if (d.position().distanceToSqr(eye) > 1024.0 || !(SeekTool.calculateAngle((Entity) d, (Entity) self) < 60.0) || !SeekTool.BASIC_FILTER.test(d) || !SeekTool.NOT_IN_SMOKE.test(d) || d.getVehicle() != null || SeekTool.IS_FRIENDLY.test(self, d) || self.level().clip(new ClipContext(eye, d.getEyePosition(), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, (Entity) self)).getType() == HitResult.Type.BLOCK || !(Math.random() < 0.25))
             continue;
-         }
+        self.setTargetUUID(d.getStringUUID());
+        self.setDistracted(true);
+        return;
+    }
+}
 
-         if (!SeekTool.BASIC_FILTER.test(d) || !SeekTool.NOT_IN_SMOKE.test(d) || d.getVehicle() != null || SeekTool.IS_FRIENDLY.test(self, d)) {
-            continue;
-         }
+   @Inject(method = { "missileIsProximityTarget(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/entity/Entity;)Z" }, at = { @At(value = "HEAD") }, cancellable = true, require = 0)
+private void f16addon$fuzeArming(Entity candidate, Entity owner, Entity ownerVehicle, CallbackInfoReturnable<Boolean> cir) {
+    if (!MissileFlight.armed((Entity) (Object) this)) {
+        cir.setReturnValue(false);
+    }
+}
 
-         if (self.level().clip(new ClipContext(eye, d.getEyePosition(), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, self)).getType()
-            == HitResult.Type.BLOCK) {
-            continue;
-         }
+   @Inject(method = "getNoHitTicks()I", at = @At("HEAD"), cancellable = true)
+private void f16addon$safeLaunch(CallbackInfoReturnable<Integer> cir) {
+    Entity self = (Entity) (Object) this;
+    if (!MissileFlight.armed(self))
+        cir.setReturnValue(self.tickCount + 1);
+}
 
-         if (Math.random() < DECOY_CHANCE) {
-            self.setTargetUUID(d.getStringUUID());
-            self.setDistracted(true);
-            return;
-         }
-      }
-   }
-
-   @Inject(method = "missileIsProximityTarget(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/entity/Entity;)Z",
-      at = @At("HEAD"), cancellable = true)
-   private void f16addon$fuzeArming(Entity candidate, Entity owner, Entity ownerVehicle, CallbackInfoReturnable<Boolean> cir) {
-      if (!MissileFlight.armed((Entity) (Object) this)) {
-         cir.setReturnValue(false);
-      }
-   }
+   @Inject(method = "forceLoadChunk()Z", at = @At("HEAD"), cancellable = true)
+private void f16addon$noAiChunkTickets(CallbackInfoReturnable<Boolean> cir) {
+    Entity self = (Entity) (Object) this;
+    if (self.getTags().contains(com.f16addon.BattleBudget.AI_SHOT) && !com.f16addon.Config.AI_PROJECTILE_CHUNK_LOADING.get())
+        cir.setReturnValue(false);
+}
 }

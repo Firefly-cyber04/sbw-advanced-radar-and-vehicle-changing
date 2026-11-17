@@ -33,6 +33,8 @@ import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import net.minecraft.client.server.IntegratedServer;
+import net.minecraft.world.level.BlockGetter;
 
 /**
  * Tactical map terrain cache: the main source of the terminal's stutter.
@@ -146,62 +148,66 @@ public abstract class TacticalMapCacheMixin implements MapCacheAccess {
    }
 
    @Override
-   public int f16addon$drain(Level level, double x, double z, long budgetNanos) {
-      if (!(level instanceof ClientLevel) || chunkUpdateQueue.isEmpty()) {
-         return 0;
-      }
-
-      this.ensureInit(level);
-      long start = System.nanoTime();
-      int pcx = Mth.floor(x) >> 4;
-      int pcz = Mth.floor(z) >> 4;
-      // K nearest without sorting the whole queue (it can hold thousands of entries after a long flight).
-      int k = Math.min(f16addon$MAX_PER_CALL, chunkUpdateQueue.size());
-      PriorityQueue<long[]> farthestFirst = new PriorityQueue<>(k + 1, (a, b) -> Long.compare(b[1], a[1]));
-      for (Long boxed : chunkUpdateQueue.keySet()) {
-         long key = boxed;
-         long dx = (int) (key >> 32) - pcx;
-         long dz = (int) key - pcz;
-         long d = dx * dx + dz * dz;
-         if (farthestFirst.size() < k) {
-            farthestFirst.add(new long[]{key, d});
-         } else if (d < farthestFirst.peek()[1]) {
-            farthestFirst.poll();
-            farthestFirst.add(new long[]{key, d});
-         }
-      }
-
-      long[][] nearest = farthestFirst.toArray(new long[0][]);
-      Arrays.sort(nearest, (a, b) -> Long.compare(a[1], b[1]));
-      int done = 0;
-      for (long[] entry : nearest) {
-         if (done > 0 && System.nanoTime() - start > budgetNanos) {
+public int f16addon$drain(Level level, double x, double z, long budgetNanos) {
+    if (!(level instanceof ClientLevel) || chunkUpdateQueue.isEmpty()) {
+        return 0;
+    }
+    this.ensureInit(level);
+    long start = System.nanoTime();
+    int pcx = Mth.floor((double) x) >> 4;
+    int pcz = Mth.floor((double) z) >> 4;
+    if (pendingDiskChunks.size() >= 4096)
+        return 0;
+    int k = Math.min(128, chunkUpdateQueue.size());
+    PriorityQueue<long[]> farthestFirst = new PriorityQueue<long[]>(k + 1, ( a,  b) -> Long.compare(b[1], a[1]));
+    int examined = 0;
+    int limit = com.f16addon.Config.MAP_QUEUE_SCAN_LIMIT.get();
+    long scanBudget = Math.max(100_000L, budgetNanos / 3);
+    if (f16addon$queueCursor == null || !f16addon$queueCursor.hasNext())
+        f16addon$queueCursor = chunkUpdateQueue.keySet().iterator();
+    while (f16addon$queueCursor.hasNext() && examined++ < limit) {
+        if ((examined & 31) == 0 && System.nanoTime() - start >= scanBudget)
             break;
-         }
-
-         LevelChunk chunk = chunkUpdateQueue.remove(entry[0]);
-         if (chunk == null) {
+        Long boxed = f16addon$queueCursor.next();
+        long key = boxed;
+        long dx = (int) (key >> 32) - pcx;
+        long dz = (int) key - pcz;
+        long d = dx * dx + dz * dz;
+        if (farthestFirst.size() < k) {
+            farthestFirst.add(new long[] { key, d });
             continue;
-         }
-
-         this.f16addon$render(chunk, level);
-         drawnChunks.add(entry[0]);
-         done++;
-      }
-
-      return done;
-   }
+        }
+        if (d >= ((long[]) farthestFirst.peek())[1])
+            continue;
+        farthestFirst.poll();
+        farthestFirst.add(new long[] { key, d });
+    }
+    long[][] nearest = (long[][]) farthestFirst.toArray(new long[0][]);
+    Arrays.sort(nearest, ( a,  b) -> Long.compare(a[1], b[1]));
+    int done = 0;
+    for (long[] entry : nearest) {
+        if (done > 0 && System.nanoTime() - start > budgetNanos)
+            break;
+        LevelChunk chunk = chunkUpdateQueue.remove(entry[0]);
+        if (chunk == null)
+            continue;
+        this.f16addon$render(chunk, level);
+        drawnChunks.add(entry[0]);
+        ++done;
+    }
+    return done;
+}
 
    @Override
-   public void f16addon$onChunkUnload(LevelChunk chunk, Level level, boolean render) {
-      ChunkPos pos = chunk.getPos();
-      long key = f16addon$key(pos.x, pos.z);
-      LevelChunk queued = chunkUpdateQueue.remove(key);
-      if (queued != null && render) {
-         this.f16addon$render(queued, level);
-         drawnChunks.add(key);
-      }
-   }
+public void f16addon$onChunkUnload(LevelChunk chunk, Level level, boolean render) {
+    ChunkPos pos = chunk.getPos();
+    long key = TacticalMapCacheMixin.f16addon$key(pos.x, pos.z);
+    LevelChunk queued = chunkUpdateQueue.remove(key);
+    if (queued != null && render && pendingDiskChunks.size() < 4096) {
+        this.f16addon$render(queued, level);
+        drawnChunks.add(key);
+    }
+}
 
    @Inject(method = "updateChunk", at = @At("HEAD"), cancellable = true)
    private void f16addon$updateChunk(LevelChunk chunk, Level level, CallbackInfo ci) {
@@ -343,15 +349,15 @@ public abstract class TacticalMapCacheMixin implements MapCacheAccess {
       f16addon$lastLodRebuild = now;
    }
 
-   /** SHA-256 of the server address (or level name + seed) was recomputed on every call, i.e. per chunk. */
-   @Inject(method = "getWorldIdentifier", at = @At("HEAD"), cancellable = true)
-   private void f16addon$cachedWorldId(CallbackInfoReturnable<String> cir) {
-      Object key = f16addon$currentWorldKey();
-      long now = System.currentTimeMillis();
-      if (f16addon$worldId != null && key == f16addon$worldKey && now - f16addon$worldIdAt < 1000L && now >= f16addon$worldIdAt) {
-         cir.setReturnValue(f16addon$worldId);
-      }
-   }
+
+   @Inject(method = { "getWorldIdentifier" }, at = { @At(value = "HEAD") }, cancellable = true)
+private void f16addon$cachedWorldId(CallbackInfoReturnable<String> cir) {
+    Object key = TacticalMapCacheMixin.f16addon$currentWorldKey();
+    long now = System.currentTimeMillis();
+    if (f16addon$worldId != null && key == f16addon$worldKey && now - f16addon$worldIdAt < 1000L && now >= f16addon$worldIdAt) {
+        cir.setReturnValue(f16addon$worldId);
+    }
+}
 
    @Inject(method = "getWorldIdentifier", at = @At("RETURN"))
    private void f16addon$storeWorldId(CallbackInfoReturnable<String> cir) {
@@ -361,28 +367,39 @@ public abstract class TacticalMapCacheMixin implements MapCacheAccess {
    }
 
    @Unique
-   private static Object f16addon$currentWorldKey() {
-      Minecraft mc = Minecraft.getInstance();
-      Object server = mc.getSingleplayerServer();
-      return server != null ? server : mc.getCurrentServer();
-   }
+private static Object f16addon$currentWorldKey() {
+    Minecraft mc = Minecraft.getInstance();
+    IntegratedServer server = mc.getSingleplayerServer();
+    return mc.level != null ? mc.level : (server != null ? server : mc.getCurrentServer());
+}
 
    // ----------------------------------------------------------------------------------------------------------------
    // Disk
    // ----------------------------------------------------------------------------------------------------------------
 
-   @Inject(method = "flushPendingDiskWrites", at = @At("HEAD"), cancellable = true)
-   private void f16addon$flushAsync(CallbackInfo ci) {
-      ci.cancel();
-      if (pendingDiskChunks.isEmpty()) {
-         return;
-      }
+   @Inject(method = { "flushPendingDiskWrites" }, at = { @At(value = "HEAD") }, cancellable = true)
+private void f16addon$flushAsync(CallbackInfo ci) {
+    ci.cancel();
+    if (pendingDiskChunks.isEmpty()) {
+        return;
+    }
+    File dir = this.getCacheDir();
+    if (dir == null)
+        return;
+    HashMap<Long, byte[]> snapshot = new HashMap<>();
+    int bytes = 0;
+    for (var entry : pendingDiskChunks.entrySet()) {
+        snapshot.put(entry.getKey(), entry.getValue());
+        bytes += entry.getValue().length;
+        if (snapshot.size() >= 512 || bytes >= 2 * 1024 * 1024)
+            break;
+    }
+    long maximum = com.f16addon.Config.MAP_DISK_MAX_MIB.get() * 1024L * 1024L;
+    if (MapDiskWriter.submit(dir, snapshot, maximum)) {
+        snapshot.forEach(( key,  value) -> pendingDiskChunks.remove(key, value));
+    }
+}
 
-      File dir = this.getCacheDir();
-      Map<Long, byte[]> snapshot = new HashMap<>(pendingDiskChunks);
-      pendingDiskChunks.clear();
-      if (dir != null) {
-         MapDiskWriter.submit(dir, snapshot);
-      }
-   }
+   @Unique
+private java.util.Iterator<Long> f16addon$queueCursor;
 }
