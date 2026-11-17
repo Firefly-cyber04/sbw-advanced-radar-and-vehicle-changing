@@ -1,19 +1,32 @@
-# Enemy Forces Addon 1.2.0
+# Enemy Forces Addon 1.3.0 预览版
 
 Minecraft **1.20.1 / Forge 47.4.x** 的敌方部队与空战扩展整合包。
 
 本仓库包含：
 
-- `enemyforces-1.2.0.jar`：Enemy Forces 附属本体（源码见 `addon-src/`）
+- `enemyforces-1.3.0-source-preview.jar`：Enemy Forces 附属本体（源码见 `addon-src/`）
 - `superbwarfare-0.8.9.2-...jar`：修改过的 Superb Warfare
 - `dragonrise_reforge-1.5.1-release.jar`：修改过的 DragonRise Reforge
 - `docs/F16_ADDON.md`：完整功能与参数说明
 - `config/superbwarfare-server.toml`：当前使用的服务端配置参考
-- `config/f16addon-server.toml`：附属 AI 配置（1.1.0 新增）
+- `config/f16addon-server.toml`：附属 AI 与战斗节奏配置
+- `config/f16addon-client.toml`：客户端爆炸特效配置
 - `docs/PERF_AND_TARGETING_1.1.0.md`：1.1.0 卡顿与索敌修复说明、基准数据
 - `docs/AUTOPILOT_RADAR_1.2.0.md`：1.2.0 自动驾驶、战术终端、飞行视角修复说明
 
 > **重要**：Superb Warfare 与 DragonRise 是第三方模组，本仓库中的对应 jar 是**修改版**。原模组版权归原作者所有；使用前请备份原 jar。
+
+---
+
+## 1.3.0 预览更新摘要
+
+- 修复威胁索引和雷达告警首次扫描的时钟溢出，增加跨世界缓存清理。
+- 共享空间索引、友军威胁预测和实体快照，限制附加 AI 弹药生成负载。
+- 增加有限虚拟弹药、点射/装填、返回部署点补给、低血量撤退与小规模战术任务。
+- AI 弹药默认只在已加载战场运行；玩家导弹保留原有区块加载行为。
+- 增加爆炸地形扫描开关、客户端粒子分级、地图队列与合并写盘背压。
+- 只更新 Enemy Forces；仓库内两个第三方修改版 JAR 保持原样。
+- 详细参数、命令及验证边界见 [docs/COMBAT_AND_PERFORMANCE_1.3.0.md](docs/COMBAT_AND_PERFORMANCE_1.3.0.md)。这是需要实机联调的预览版，历史 MSPT 数字不代表本次测量结果。
 
 ---
 
@@ -74,9 +87,9 @@ Minecraft **1.20.1 / Forge 47.4.x** 的敌方部队与空战扩展整合包。
 
 ### 导弹寿命与脱锁
 
-- 普通投射物：**500 tick（25 秒）**
+- 默认只管理附加生成的弹药，普通弹药清理上限：**500 tick（25 秒）**；不统一清理原版箭和三叉戟
 - 红外 AAM：**160 tick（8 秒）**
-- 巡航导弹（`Ru3m14`）：不自动销毁
+- 附加巡航导弹（`Ru3m14`）：单独清理上限 **2400 tick（120 秒）**
 - 制导导弹脱锁：**160 tick（8 秒）** 后销毁
 - `TARGET_POS` 有效（包括地面坐标）视为仍锁定：
   - 对地导弹不会因为 UUID 为 `"none"` 被误删
@@ -85,12 +98,12 @@ Minecraft **1.20.1 / Forge 47.4.x** 的敌方部队与空战扩展整合包。
 
 ### 区块加载
 
-- 所有 `MissileProjectile` 保持强制加载，包括无玩家、未渲染、超高导弹。
+- 玩家导弹保留原有强制加载，包括无玩家、未渲染、超高导弹。附加 AI 弹药默认不申请加载，可通过 `[combatTuning] aiProjectileChunkLoading` 恢复。
 - 通过全局限制控制消耗：
   - `max_projectile_chunks_force_loaded = 64`
   - `max_projectile_chunks_loaded_each_tick = 8`
   - `projectile_chunk_age = 10`
-- 导弹不会因区块卸载停止 tick，能正常超时/脱锁销毁。
+- 开启原生区块加载的导弹继续按原机制仿真；关闭 AI 主动加载时，附加弹药在离开已加载战场前结束。
 
 ### BVR / 战术终端
 
@@ -201,7 +214,7 @@ projectile_chunk_age = 10
 │  ├─ F16_ADDON.md
 │  └─ PERF_AND_TARGETING_1.1.0.md
 └─ mods/
-   ├─ enemyforces-1.2.0.jar
+   ├─ enemyforces-1.3.0-source-preview.jar
    ├─ superbwarfare-0.8.9.2-mc1.20.1-65d985a64-all.jar
    └─ dragonrise_reforge-1.5.1-release.jar
 ```

@@ -68,11 +68,11 @@ public abstract class TacticalMapScreenMixin {
    @Final
    private Button followBtn;
 
-   @Inject(method = "m_88315_(Lnet/minecraft/client/gui/GuiGraphics;IIF)V", at = @At("HEAD"))
-   private void f16addon$renderPanel(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
-      Screen screen = (Screen) (Object) this;
-      SituationPanel.render(graphics, screen.width, screen.height, mouseX, mouseY);
-   }
+   @Inject(method = { "render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V", "m_88315_(Lnet/minecraft/client/gui/GuiGraphics;IIF)V" }, at = { @At(value = "HEAD") })
+private void f16addon$renderPanel(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+    Screen screen = (Screen) (Object) this;
+    SituationPanel.render(graphics, screen.width, screen.height, mouseX, mouseY);
+}
 
    @Inject(method = "renderPanelBg(Lnet/minecraft/client/gui/GuiGraphics;)V", at = @At("HEAD"), cancellable = true)
    private void f16addon$panelBg(GuiGraphics graphics, CallbackInfo ci) {
@@ -106,33 +106,29 @@ public abstract class TacticalMapScreenMixin {
       ci.cancel();
    }
 
-   /** Right after the widgets (SBW's two vanilla buttons) are drawn and before their tooltips. */
-   @Inject(method = "m_88315_(Lnet/minecraft/client/gui/GuiGraphics;IIF)V",
-      at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screens/Screen;m_88315_(Lnet/minecraft/client/gui/GuiGraphics;IIF)V", shift = At.Shift.AFTER))
-   private void f16addon$buttons(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
-      TerminalChrome.buttons(graphics, this.centerBtn, this.followBtn, this.followPlayer, mouseX, mouseY);
-   }
 
-   @Inject(method = "m_6375_(DDI)Z", at = @At("HEAD"), cancellable = true)
-   private void f16addon$clickPanel(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
-      if (button != 0) {
-         return;
-      }
+   @Inject(method = { "render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V", "m_88315_(Lnet/minecraft/client/gui/GuiGraphics;IIF)V" }, at = { @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screens/Screen;render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V", shift = At.Shift.AFTER) }, require = 0)
+private void f16addon$buttons(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+    TerminalChrome.buttons(graphics, this.centerBtn, this.followBtn, this.followPlayer, mouseX, mouseY);
+}
 
-      double[] target = SituationPanel.click(mouseX, mouseY);
-      if (target == null) {
-         return;
-      }
-
-      if (target.length == 2) {
-         this.viewBlockX = target[0];
-         this.viewBlockZ = target[1];
-         this.followPlayer = false;
-         savedFollowPlayer = false;
-      }
-
-      cir.setReturnValue(true);
-   }
+   @Inject(method = { "mouseClicked(DDI)Z", "m_6375_(DDI)Z" }, at = { @At(value = "HEAD") }, cancellable = true)
+private void f16addon$clickPanel(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
+    if (button != 0) {
+        return;
+    }
+    double[] target = SituationPanel.click(mouseX, mouseY);
+    if (target == null) {
+        return;
+    }
+    if (target.length == 2) {
+        this.viewBlockX = target[0];
+        this.viewBlockZ = target[1];
+        this.followPlayer = false;
+        savedFollowPlayer = false;
+    }
+    cir.setReturnValue(true);
+}
 
    @Unique
    private int f16addon$modeColor() {
@@ -164,4 +160,9 @@ public abstract class TacticalMapScreenMixin {
 
       return key == null ? null : Component.translatable(key).getString();
    }
+
+   @Inject(method = { "render(Lnet/minecraft/client/gui/GuiGraphics;IIF)V", "m_88315_(Lnet/minecraft/client/gui/GuiGraphics;IIF)V" }, at = { @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screens/Screen;m_88315_(Lnet/minecraft/client/gui/GuiGraphics;IIF)V", shift = At.Shift.AFTER) }, require = 0)
+private void f16addon$buttonsProduction(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+    TerminalChrome.buttons(graphics, this.centerBtn, this.followBtn, this.followPlayer, mouseX, mouseY);
+}
 }

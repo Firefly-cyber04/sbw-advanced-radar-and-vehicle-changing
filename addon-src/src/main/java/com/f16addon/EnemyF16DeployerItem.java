@@ -63,17 +63,22 @@ public class EnemyF16DeployerItem extends Item {
    }
 
    private boolean spawn(Level level, Player player, Vec3 pos) {
+      return deployAt(level, player, pos) != null;
+   }
+
+   /** Reuse deployment initialization for bounded tactical encounters. */
+   public Entity deployAt(Level level, Player player, Vec3 pos) {
       EntityType<?> type = (EntityType<?>)ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.tryParse("dragonrise_reforge:f16c"));
       if (type == null) {
          if (player != null) {
             player.displayClientMessage(Component.literal("Missing entity type dragonrise_reforge:f16c"), true);
          }
 
-         return false;
+         return null;
       } else {
          Entity entity = type.create(level);
          if (entity == null) {
-            return false;
+            return null;
          } else {
             float yaw = player != null ? player.getYRot() : 0.0F;
             entity.moveTo(pos.x, pos.y, pos.z, yaw, 0.0F);
@@ -81,14 +86,14 @@ public class EnemyF16DeployerItem extends Item {
             entity.setCustomNameVisible(true);
             entity.addTag("enemy_f16");
             if (!level.addFreshEntity(entity)) {
-               return false;
+               return null;
             } else if (!F16Addon.initializeGunData(entity)) {
                entity.discard();
                if (player != null) {
                   player.displayClientMessage(Component.literal("F-16 gun data failed to initialize; see the log.").withStyle(ChatFormatting.RED), false);
                }
 
-               return false;
+               return null;
             } else {
                CompoundTag data = entity.getPersistentData();
                data.putDouble("f16_home_x", entity.getX());
@@ -106,7 +111,7 @@ public class EnemyF16DeployerItem extends Item {
                   );
                }
 
-               return true;
+               return entity;
             }
          }
       }

@@ -1,0 +1,7 @@
+# Complete defaults for reference; merge desired keys into your existing configuration.
+
+[effects]
+explosionLod = true
+fullEffectRange = 96.0
+mediumEffectRange = 256.0
+detailedExplosionsPerTick = 3

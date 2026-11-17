@@ -48,52 +48,58 @@ public final class Classify {
    }
 
    private static int compute(Class<?> type) {
-      String n = type.getSimpleName().toUpperCase(Locale.ROOT);
-      int t = 0;
-      if (any(n, "RU9M336", "AIM9", "PL10", "PL8", "R73")) {
-         t |= IR_AAM;
-      }
-
-      if (any(n, "AIM120", "PL12", "PL15", "R77")) {
-         t |= RADAR_AAM;
-      }
-
-      if (any(n, "IGLA", "FIM92")) {
-         t |= MANPADS;
-      }
-
-      boolean missile = Sbw.isMissileClass(type)
-         || any(n, "MISSILE", "AIM120", "AIM9", "PL10", "PL12", "PL15", "RU9", "IGLA", "FIM", "AGM", "KH", "JAVELIN", "HELLFIRE", "TOW");
-      if (missile) {
-         t |= MISSILE;
-      }
-
-      if (missile || any(n, "SHELL", "CANNON", "ARTILLERY", "MORTAR", "ROCKET", "RPG", "GRENADE")) {
-         t |= AIR_DEFENSE_TARGET;
-      }
-
-      if (n.contains("RU3M14")) {
-         t |= CRUISE;
-      }
-
-      if (any(n, "FLAREDECOY", "SMOKEDECOY", "DECOYENTITY")) {
-         t |= DECOY;
-      }
-
-      if (any(n, "J20", "J35", "F22", "F35", "SU57", "FC31", "TJGC")) {
-         t |= FIFTH_GEN;
-      }
-
-      if (n.contains("BMPT")) {
-         t |= BMPT;
-      }
-
-      return t;
+       boolean missile;
+       String n = type.getSimpleName().toUpperCase(Locale.ROOT);
+       int t = 0;
+       if (Classify.any(n, "RU9M336", "AIM9", "PL10", "PL8", "R73")) {
+           t |= 1;
+       }
+       if (Classify.any(n, "AIM120", "PL12", "PL15", "R77")) {
+           t |= 2;
+       }
+       if (Classify.any(n, "IGLA", "FIM92")) {
+           t |= 4;
+       }
+       boolean bl = missile = Sbw.isMissileClass(type) || Classify.any(n, "MISSILE", "AIM120", "AIM9", "PL10", "PL12", "PL15", "RU9", "IGLA", "FIM", "AGM", "KH", "JAVELIN", "HELLFIRE", "TOW");
+       if (missile) {
+           t |= 8;
+       }
+       if (missile || Classify.any(n, "SHELL", "CANNON", "ARTILLERY", "MORTAR", "ROCKET", "RPG", "GRENADE")) {
+           t |= 0x10;
+       }
+       if (n.contains("RU3M14")) {
+           t |= 0x20;
+       }
+       if (Classify.any(n, "FLAREDECOY", "SMOKEDECOY", "DECOYENTITY")) {
+           t |= 0x40;
+       }
+       if (Classify.any(n, "J20", "J35", "F22", "F35", "SU57", "FC31", "TJGC")) {
+           t |= 0x80;
+       }
+       if (any(n, "SMALLCANNON", "SMALLSHELL"))
+           t |= SMALL_SHELL;
+       if (n.contains("BMPT")) {
+           t |= 0x100;
+       }
+       return t;
    }
 
    /** Stealth check looks at the airframe, not the pilot riding it. */
    public static boolean isFifthGen(Entity entity) {
       Entity body = entity.getVehicle() != null ? entity.getRootVehicle() : entity;
       return is(body, FIFTH_GEN);
+   }
+
+   public static final int SMALL_SHELL = 512;
+
+   public static boolean managedLifetime(Entity entity) {
+       if (entity.getTags().contains(BattleBudget.AI_SHOT) || entity.getTags().contains("f16_aam"))
+           return true;
+       if (!Config.MANAGE_EXTERNAL_PROJECTILES.get())
+           return false;
+       net.minecraft.resources.ResourceLocation id = net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
+       if (id == null || !(id.getNamespace().equals("superbwarfare") || id.getNamespace().equals("dragonrise_reforge")))
+           return false;
+       return is(entity, MISSILE | AIR_DEFENSE_TARGET | DECOY);
    }
 }
